@@ -1,4 +1,4 @@
-# 🎓 CampusMind AI
+# CampusMind AI
 ### Hyper-Personalized, Multilingual AI Copilot for College Students
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -6,114 +6,124 @@
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=flat)](https://www.trychroma.com/)
+[![Firebase](https://img.shields.io/badge/Firebase-Firestore-FFCA28?style=flat&logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![Gemini](https://img.shields.io/badge/Google_Gemini-3.8_Flash-4285F4?style=flat&logo=google&logoColor=white)](https://ai.google.dev/)
 
 ---
 
-## 📌 Overview
+## Overview
 
-**CampusMind AI** is a production-grade, full-stack AI copilot designed to solve student information fragmentation. Rather than acting as a generic, robotic chatbot, CampusMind AI delivers **zero-hallucination, hyper-personalized answers** tailored directly to each student's branch, academic year, admission batch, and residential status.
+CampusMind AI is a production-ready, full-stack university copilot engineered to eliminate campus information fragmentation. Instead of functioning as a generic chatbot, CampusMind AI delivers zero-hallucination, 100% source-grounded answers tailored directly to each student's enrolled branch, academic year, admission batch, and residential status.
 
----
-
-## 🌟 Key Features
-
-### 1. ⚡ Dual-Path Cognitive Engine
-- **Instant Small-Talk Routing (<0.06s):** Greetings (`"hi"`, `"how are you?"`, `"who are you?"`), gratitude, and goodbyes respond immediately without invoking heavy vector searches or consuming LLM quota.
-- **Deep Academic RAG:** Real campus questions dynamically trigger ChromaDB vector similarity search filtered by student metadata.
-
-### 2. 🎯 Hyper-Personalized Zero-Shot Context Injection
-- Captures 9 essential student attributes during onboarding:
-  - **Full Name, Student ID / Roll Number**
-  - **Branch:** CSE, ECE, MECH, EEE, CIVIL, IT
-  - **Current Year:** 1st, 2nd, 3rd, 4th Year
-  - **Admission Batch:** 2024–2028, 2023–2027, 2022–2026
-  - **Hostel / Residence:** Day Scholar, Hostel Block A, Hostel Block B
-  - **Contact:** Email, Phone Number
-- **Silent Injection:** Context is passed silently to the AI so it never asks *"Which branch are you in?"* and never repeats the profile back robotically.
-
-### 3. 📅 Complete Academic Year Exam Timetables
-- Comprehensive roadmaps covering **both Odd and Even Semesters**:
-  - **Odd Semester (Autumn):** CAT-1 (Oct), CAT-2 (Nov), Lab Exams (Dec), FAT Finals (Dec)
-  - **Even Semester (Spring):** CAT-1 (March), CAT-2 (April/May), Lab Exams (May), Spring FAT (May/June)
-  - **Day 1 to Day 4 Subject Allocations:** Maps exact course codes and titles per branch and year (e.g., DSA, OS, Web Tech, RDBMS, AI/ML).
-
-### 4. 💰 Dynamic Fee Calculations
-- Differentiated tuition fees, lab consumables, digital library access, tech/cloud fees, admission caution deposits, and 4th-year capstone fees across all 6 engineering departments.
-- Hostel Block A & Block B boarding and multi-cuisine mess charges.
-
-### 5. 🌐 Multilingual Assistance
-- Native language translation and response generation for **Hindi, Telugu, Tamil, Spanish, French, German**, and English.
-- Queries in regional languages are matched against English records and answered fluently in the requested language.
-
-### 6. 🛡️ Resilient Model Fallback Architecture
-- Primary model: **Gemini 3.8 Flash**.
-- Automatic failover across Google's high-efficiency model tiers (`gemini-3.7-flash` ➔ `gemini-3.6-flash` ➔ `gemini-3.5-flash-lite` ➔ `gemini-3.1-flash-lite` ➔ `gemini-2.5-flash`) ensuring 100% uptime even under high traffic or rate limits.
+Every academic inquiry is dynamically mapped to institutional circulars, regulatory clauses, and curriculum blueprints with interactive citation badges and document viewing.
 
 ---
 
-## 🏗️ Architecture & Data Strategy
+## Core Capabilities
+
+### 1. Dual-Path Cognitive Engine
+- **Instant Small-Talk Routing (<0.06s):** Standard greetings ("hi", "good morning", "who are you?"), gratitude, and basic conversational pleasantries execute immediately via regex/keyword routing without calling LLM APIs or vector stores.
+- **Deep Institutional RAG:** Real campus questions dynamically invoke a metadata-filtered ChromaDB vector search against 199 institutional policy documents and syllabi.
+
+### 2. Hyper-Personalized Zero-Shot Context Injection
+- Automatically integrates 9 student attributes upon login:
+  - **Full Name and Roll Number / Student ID**
+  - **Branch:** Computer Science (CSE), Electronics (ECE), Mechanical (MECH), Electrical (EEE), Civil (CIVIL), Information Technology (IT)
+  - **Academic Year:** 1st, 2nd, 3rd, 4th Year
+  - **Admission Batch:** 2024-2028, 2023-2027, 2022-2026
+  - **Residence:** Day Scholar, Hostel Block A, Hostel Block B
+  - **Contact Details:** Email, Phone Number
+- **Silent Persona Handshake:** Academic context is passed directly to the generation prompt, ensuring the copilot never asks repetitive intake questions.
+
+### 3. Source-Backed Answers with Document Viewer
+- Every institutional response includes grounded citations referencing official regulations.
+- Interactive citation pills allow students to review exact clauses, issue dates, issuing authorities, and full markdown document source files directly inside the application.
+
+### 4. Real-Time Student Analytics & Grievance Actions
+- **Live Attendance Dashboard:** Displays subject-by-subject attendance percentages with immediate regulatory warnings (75% mandatory threshold, 65%-74% medical condonation).
+- **Automated Grievance Management:** Generates formal academic and hostel support tickets with tracking IDs, category tagging, and severity escalation.
+- **Official Campus Gazette:** Displays campus news, Wi-Fi maintenance alerts, exam circulars, and placement drives.
+
+### 5. Multilingual Natural Language Support
+- Native prompt parsing and response generation for English, Hindi, Telugu, Tamil, Spanish, French, and German.
+- Queries submitted in regional languages are matched against institutional policies and translated back into the student's chosen language.
+
+### 6. Resilient Model Fallback Architecture
+- Primary generative model: **Google Gemini 3.8 Flash**.
+- Resilient multi-tier failover (`gemini-3.8-flash` -> `gemini-3.7-flash` -> `gemini-3.6-flash` -> `gemini-3.5-flash-lite` -> `gemini-2.5-flash`) ensures uninterrupted uptime even during peak usage or API rate limits.
+
+---
+
+## System Architecture
 
 ```
-                          ┌────────────────────────┐
-                          │   React + Vite UI      │
-                          │ (Modern Glassmorphic)  │
-                          └───────────┬────────────┘
-                                      │ HTTP / JSON (JWT Auth)
-                                      ▼
-                          ┌────────────────────────┐
-                          │    FastAPI Backend     │
-                          └─────┬────────────┬─────┘
-                                │            │
-                Fast Route (<0.06s)          │ Academic RAG
-                                │            ▼
-            ┌───────────────────┴──┐  ┌────────────────────────┐
-            │ Instant Response     │  │ Metadata Filtered RAG  │
-            │ (Greetings & Casual) │  │  Branch + Year Filter  │
-            └──────────────────────┘  └───────────┬────────────┘
-                                                  │
-                                      ┌───────────┴────────────┐
-                                      │  ChromaDB Vector Store │
-                                      │ 171 Docs / 876 Chunks  │
-                                      └───────────┬────────────┘
-                                                  │
-                                      ┌───────────▼────────────┐
-                                      │ Google Gemini Flash    │
-                                      │ (Zero Hallucination)   │
-                                      └────────────────────────┘
+                          +------------------------+
+                          |   React + Vite UI      |
+                          | (Modern Glassmorphic)  |
+                          +-----------+------------+
+                                      | HTTP / JSON (JWT Auth)
+                                      v
+                          +------------------------+
+                          |    FastAPI Backend     |
+                          +-----+------------+-----+
+                                |            |
+                Fast Route (<0.06s)          | Academic RAG
+                                |            v
+            +-------------------+--+  +------------------------+
+            | Instant Response     |  | Metadata Filtered RAG  |
+            | (Greetings & Casual) |  |  Branch + Year Filter  |
+            +----------------------+  +-----------+------------+
+                                                  |
+                                      +-----------+------------+
+                                      |  ChromaDB Vector Store |
+                                      | 199 Docs / 958 Chunks  |
+                                      +-----------+------------+
+                                                  |
+                                      +-----------v------------+
+                                      | Google Gemini Flash    |
+                                      | (Zero Hallucination)   |
+                                      +------------------------+
 ```
 
-The knowledge base is synthesized from the official curriculum (`base_curriculum.pdf`) via [`seed_data.py`](seed_data.py), producing **171 structured markdown documents** in [`knowledge_base/`](knowledge_base/):
-- **24 Examination Schedules** (6 Branches × 4 Years)
-- **72 Fee Structures** (6 Branches × 3 Batches × 4 Years)
-- **72 Syllabi & Curricula** (6 Branches × 3 Batches × 4 Years)
-- **Hostel & Campus Regulations** (Curfews, mess timings, penalties)
-- **Academic & Attendance Policies** (75% mandatory attendance, 65%–74% medical condonation, 10-point GPA scale)
-- **Placement & Internship Regulations** (6.5 CGPA, tiers: Standard, Dream, Super Dream)
-
-> For full details, see the [Judge & Tester Knowledge Catalog](CAMPUSMIND_KNOWLEDGE_BASE_GUIDE.md).
+The knowledge base is built from official institutional documents in `knowledge_base/`:
+- **Examination Schedules:** Odd and Even semester schedules for all branches and academic years.
+- **Curricula & Syllabi:** Course structures, credit allocations, and recommended textbooks.
+- **Tuition & Hostel Fee Tables:** Differentiated fee schedules per branch, batch, and hostel block.
+- **Academic & Attendance Policies:** 75% attendance rule, condonation procedures, and grading criteria.
+- **Campus & Hostel Regulations:** Curfews, entry-exit timings, and Wi-Fi policies.
+- **Placement & Internship Guidelines:** CGPA eligibility thresholds and company tier classifications.
 
 ---
 
-## 🛠️ Tech Stack
+## Universal Suggested Inquiries
+
+Every student profile (new users, demo profiles, and custom accounts) is provided with 4 default inquiries:
+1. Current attendance status of every subjects.
+2. Provide syllabus of this sem of mine and a tailored roadmap to achieve 9+ gpa.
+3. Any recent placement updates?
+4. Hostel Wi-Fi high packet loss status and maintenance update
+
+---
+
+## Technology Stack
 
 - **Frontend:** React 19, Vite 8, Tailwind CSS, Lucide React, Zustand, Framer Motion, React Markdown, Remark GFM
-- **Backend:** FastAPI, Python 3.13, SQLAlchemy, SQLite, Pydantic v2, Bcrypt, PyJWT
-- **Vector Database:** ChromaDB (Local persistent ONNX embeddings)
-- **LLM:** Google Gemini 3.8 Flash (with resilient Gemini 3.x Flash fallback)
+- **Backend:** FastAPI, Python 3.11+, SQLAlchemy, SQLite, Pydantic v2, Passlib (Bcrypt), PyJWT, Firebase Admin SDK
+- **Vector Database:** ChromaDB (pre-indexed persistent SQLite store with 958 embeddings)
+- **Cloud Infrastructure:** Render (FastAPI Backend), Vercel (React Frontend CDN), Firebase Firestore (Student Personas)
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- **Node.js** (v18 or higher) & **npm**
-- **Python** (v3.10 or higher)
-- **Google Gemini API Key** (Free tier from [Google AI Studio](https://aistudio.google.com/))
+- Node.js (v18 or higher) and npm
+- Python (v3.10 or higher)
+- Google Gemini API Key (available from Google AI Studio)
 
 ---
 
-### Step 1: Clone the Repository
+### Step 1: Clone Repository
 ```bash
 git clone https://github.com/rohith-m06/campus-AI.git
 cd campus-AI
@@ -121,161 +131,154 @@ cd campus-AI
 
 ---
 
-### ⚡ Option A: 1-Click Automated Launch (Recommended)
+### Step 2: Automated Launch (Local Development)
 
-1. Paste your Gemini API key inside `.env` (copied from `.env.example`).
-2. Run the automated launcher:
-   - **On Windows**: Double-click **`run_app.bat`** (or type `.\run_app.bat` in terminal).
-   - **On macOS / Linux**: Run `chmod +x run_app.sh && ./run_app.sh`.
+#### On Windows:
+Double-click `run_app.bat` or run:
+```bat
+.\run_app.bat
+```
 
-*This script automatically installs all dependencies, seeds the database and knowledge base, and boots up both the backend and frontend!*
-
----
-
-### 🛠️ Option B: Step-by-Step Manual Setup
-Copy the template `.env.example` files:
+#### On macOS / Linux:
 ```bash
-# Root environment file
-cp .env.example .env
-
-# Backend environment file
-cp backend/.env.example backend/.env
-```
-
-Open `.env` (and `backend/.env`) and add your Gemini API key:
-```env
-GOOGLE_API_KEY=your_actual_gemini_api_key_here
-GEMINI_MODEL=gemini-3.8-flash
-JWT_SECRET=super_secret_jwt_random_key_12345
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
+chmod +x run_app.sh && ./run_app.sh
 ```
 
 ---
 
-### Step 3: Backend Setup
-```bash
-# Create and activate virtual environment
-python -m venv backend/venv
+### Step 3: Manual Installation
 
-# Windows:
-backend\venv\Scripts\activate
-# macOS / Linux:
-source backend/venv/bin/activate
+#### Backend Configuration
+1. Create and activate a Python virtual environment:
+   ```bash
+   python -m venv backend/venv
+   
+   # Windows:
+   backend\venv\Scripts\activate
+   # macOS / Linux:
+   source backend/venv/bin/activate
+   ```
 
-# Install dependencies
-pip install -r backend/requirements.txt
+2. Install dependencies:
+   ```bash
+   pip install -r backend/requirements.txt
+   ```
 
-# Generate the synthetic knowledge base (172 documents)
-python seed_data.py
+3. Configure environment variables in `.env` and `backend/.env`:
+   ```env
+   GOOGLE_API_KEY=your_gemini_api_key_here
+   GEMINI_MODEL=gemini-3.8-flash
+   JWT_SECRET=your_jwt_secret_key_here
+   ACCESS_TOKEN_EXPIRE_MINUTES=1440
+   ```
 
-# Ingest and index documents into ChromaDB
-python ingest_data.py
+4. Start the FastAPI backend:
+   ```bash
+   python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   Interactive Swagger documentation will be available at `http://127.0.0.1:8000/docs`.
 
-# Seed official demo student accounts into SQLite
-python -m backend.seed_users
+#### Frontend Configuration
+1. In a separate terminal, navigate to the frontend directory:
+   ```bash
+   cd frontend
+   npm install
+   ```
 
-# Start the FastAPI backend server
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-```
-API Documentation will be live at: `http://127.0.0.1:8000/docs`
+2. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
+   Open your browser at `http://localhost:5173/`.
 
 ---
 
-### Step 4: Frontend Setup
-In a new terminal window:
-```bash
-cd frontend
+### Step 4: Verification Tests
 
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
-```
-Open your browser at: `http://localhost:5173/`
-
----
-
-### Step 5: Run Automated Tests
+Run the automated test suite to verify RAG grounding, routing, and document availability:
 ```bash
 # Windows:
 backend\venv\Scripts\python.exe tests/test_rag.py
 backend\venv\Scripts\python.exe tests/test_e2e.py
+backend\venv\Scripts\python.exe tests/test_docs_and_queries.py
 
 # macOS / Linux:
 python tests/test_rag.py
 python tests/test_e2e.py
+python tests/test_docs_and_queries.py
 ```
 
 ---
 
-## 🧪 Testing Personas for Evaluators & Judges
+## Evaluator Profiles
 
-You can register with any profile or use these sample student profiles to test personalization:
+Pre-configured demo profiles for testing role-based personalization:
 
-| Student Name | Branch & Year | Key Query to Test | Expected Behavior |
-| :--- | :--- | :--- | :--- |
-| **Kavya Patel** | CSE 2nd Year (Hostel Block A) | *"What are all my exam dates and subjects for this whole year?"* | Returns Odd Sem (Oct 10–15 CAT-1) and Even Sem (March 15–20 CAT-1) with exact 2nd Year subjects (DSA, OS, Web Tech, RDBMS). |
-| **Rohan Verma** | ECE 1st Year (Day Scholar) | *"When are my CAT-1 exams and what is the fee?"* | Distinguishes ECE start date (Oct 12 vs CSE Oct 10) and calculates ₹2,10,000 tuition. |
-| **Any Student** | Any Branch | *"hi"* or *"how are you?"* | Responds **instantly (<0.06s)** without querying vector database, no source badges. |
-| **Any Student** | Any Branch | *"मेरी अटेंडेंस 70% हो गई तो क्या होगा?"* | Fluently explains the 75% rule and medical condonation in Hindi. |
+| Profile | Academic Details | Focus Area |
+| :--- | :--- | :--- |
+| **Arjun Sharma** | CSE, 1st Year, Hostel Block A | First-year computer science syllabus, programming lab requirements, and hostel dining schedules. |
+| **Priya Patel** | ECE, 2nd Year, Day Scholar | Core electronics curriculum, exam timetables, and off-campus commuter transport schedules. |
+| **Rahul Verma** | MECH, 3rd Year, Hostel Block B | Capstone engineering projects, pre-placement eligibility, and industrial internship policies. |
 
 ---
 
-## 📂 Project Structure
+## Deployment Architecture
+
+### Backend (Render)
+- Configured via `render.yaml`.
+- The pre-indexed `chroma_db/` (8 MB SQLite database containing 958 chunks) is tracked in the repository to eliminate build-time ingestion memory overhead, keeping memory usage around 110 MB (safely within free-tier limits).
+
+### Frontend (Vercel)
+- Configured via `vercel.json` with API rewrite proxies pointing to `https://campus-ai-8t9z.onrender.com/api/:path*`.
+- Production bundle includes dynamic client-side caching to guarantee sub-second cold starts.
+
+---
+
+## Repository Structure
 
 ```
 campus-AI/
-├── .env.example                            # Root environment variable template
-├── .gitignore                              # Production git ignore configuration
-├── CAMPUSMIND_KNOWLEDGE_BASE_GUIDE.md      # Comprehensive judge & tester guide
-├── README.md                               # Project documentation
-├── base_curriculum.pdf                     # Source university curriculum
-├── seed_data.py                            # Multi-branch synthetic data generator
-├── ingest_data.py                          # ChromaDB vector embedding ingester
-├── main.py                                 # Root entry point
-│
-├── backend/
-│   ├── .env.example                        # Backend environment template
-│   ├── auth.py                             # Password hashing & JWT token handler
-│   ├── database.py                         # SQLite engine & session management
-│   ├── models.py                           # SQLAlchemy User model
-│   ├── schemas.py                          # Pydantic request & response schemas
-│   ├── rag_engine.py                       # Smart RAG pipeline & Gemini fallback
-│   ├── requirements.txt                    # Python dependencies
-│   └── main.py                             # FastAPI routes & endpoints
-│
-├── frontend/
-│   ├── package.json                        # Frontend dependencies & scripts
-│   ├── vite.config.js                      # Vite configuration
-│   ├── index.html                          # Single-page application template
-│   └── src/
-│       ├── App.jsx                         # Main router & theme provider
-│       ├── index.css                       # Design system & Tailwind utilities
-│       ├── pages/
-│       │   ├── AuthPage.jsx                # Login / Registration with demo prefill
-│       │   └── ChatPage.jsx                # Premium Chat UI with language switcher
-│       ├── services/
-│       │   └── api.js                      # Axios client with JWT interceptor
-│       └── store/
-│           └── authStore.js                # Zustand state persistence
-│
-├── knowledge_base/                         # 171 Generated Institutional Markdown Docs
-│   ├── exam_schedule_*.md                  # Branch & Year exam roadmaps
-│   ├── fee_structure_*.md                  # Branch, Year & Batch fee tables
-│   ├── syllabus_*.md                       # Curriculum & credit distribution
-│   ├── academic_policies_and_attendance.md # Attendance & grading regulations
-│   ├── hostel_and_campus_rules.md          # Hostel gates, mess timings, rules
-│   └── placement_and_internship_policy.md  # Placement eligibility & tiers
-│
-└── tests/
-    ├── test_conversational.py              # Fast small-talk router test
-    ├── test_rag.py                         # Branch & year filtering test
-    └── test_e2e.py                         # Complete API flow verification test
+|-- .env.example                            # Root environment configuration template
+|-- .gitignore                              # Git tracking rules (whitelists pre-built vector DB)
+|-- README.md                               # System documentation
+|-- render.yaml                             # Cloud deployment configuration for Render
+|-- vercel.json                             # Production routing & proxy rules for Vercel
+|-- ingest_data.py                          # Vector database ingestion engine
+|
+|-- backend/
+|   |-- auth.py                             # JWT token generation & password encryption
+|   |-- chroma_db/                          # Pre-built ChromaDB vector store (958 chunks)
+|   |-- database.py                         # SQLAlchemy database initialization
+|   |-- firebase_config.py                  # Firebase Firestore connection handler
+|   |-- main.py                             # FastAPI endpoints & student routing
+|   |-- models.py                           # Relational user & ticket models
+|   |-- rag_engine.py                       # Zero-hallucination RAG & fallback logic
+|   |-- requirements.txt                    # Python package dependencies
+|   `-- schemas.py                          # Pydantic request & response validation
+|
+|-- frontend/
+|   |-- index.html                          # Single-page application entry point
+|   |-- package.json                        # Node dependencies & build scripts
+|   |-- vite.config.js                      # Vite build configuration
+|   `-- src/
+|       |-- App.jsx                         # Main router & authentication gates
+|       |-- components/
+|       |   |-- CampusNewsModal.jsx         # Circulars & official gazette viewer
+|       |   `-- DocumentModal.jsx           # Institutional policy clause inspector
+|       |-- pages/
+|       |   |-- AuthPage.jsx                # Onboarding & demo profile selector
+|       |   `-- ChatPage.jsx                # Copilot interface & source citation panels
+|       |-- services/
+|       |   `-- api.js                      # API communication layer with timeout guards
+|       `-- store/
+|           `-- authStore.js                # State management for authenticated student
+|
+|-- knowledge_base/                         # 199 Institutional Policy & Curriculum Documents
+`-- tests/                                  # Automated integration & verification tests
 ```
 
 ---
 
-## 📄 License
+## License
 
-Open sourced under the [MIT License](LICENSE).
+Distributed under the [MIT License](LICENSE).
