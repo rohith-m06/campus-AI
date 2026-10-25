@@ -13,6 +13,16 @@ import GrievancesModal from '../components/GrievancesModal';
 import CampusNewsModal from '../components/CampusNewsModal';
 import CitationModal from '../components/CitationModal';
 import InteractiveTicketCard from '../components/InteractiveTicketCard';
+import { formatMessageTimestamp } from '../utils/dateFormatting';
+
+function getAcademicYearLabel(yearStr) {
+  const y = (yearStr || '2nd').toString().toLowerCase();
+  if (y.includes('1')) return '1st Year • Sem 2';
+  if (y.includes('2')) return '2nd Year • Sem 4';
+  if (y.includes('3')) return '3rd Year • Sem 6';
+  if (y.includes('4')) return '4th Year • Sem 8';
+  return `${yearStr} Year • Sem 4`;
+}
 
 export default function ChatPage() {
   const navigate = useNavigate();
@@ -43,6 +53,36 @@ export default function ChatPage() {
   const [openTicketsCount, setOpenTicketsCount] = useState(0);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef(null);
+
+  // Experience fixes state (Sections 7 & 8)
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState(null); // { id, title } | null
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [copyErrorId, setCopyErrorId] = useState(null);
+  const [processingStage, setProcessingStage] = useState('Preparing your academic context...');
+
+  // 7.9 Platform-aware keyboard shortcut detection
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const shortcutLabel = isMac ? '⌘K' : 'Ctrl+K';
+
+  // 7.4 Processing stage progression during waiting
+  useEffect(() => {
+    if (!isSending) {
+      setProcessingStage('Preparing your academic context...');
+      return;
+    }
+    setProcessingStage('Preparing your academic context...');
+    const t1 = setTimeout(() => {
+      setProcessingStage('Searching university records...');
+    }, 1200);
+    const t2 = setTimeout(() => {
+      setProcessingStage('Generating grounded answer...');
+    }, 2600);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [isSending]);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -135,19 +175,23 @@ export default function ChatPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Keyboard shortcut listener (Cmd/Ctrl + K for new chat, Esc to clear)
+  // Keyboard shortcut listener (Cmd/Ctrl + K for new chat, Esc to clear or close delete modal)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         handleNewChat();
       } else if (e.key === 'Escape') {
-        setInputPrompt('');
+        if (confirmDeleteSession) {
+          setConfirmDeleteSession(null);
+        } else {
+          setInputPrompt('');
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [confirmDeleteSession]);
 
   // Initial data loading
   useEffect(() => {
@@ -155,12 +199,35 @@ export default function ChatPage() {
     loadStudentContext();
   }, [user]);
 
-  // Delete chat session
-  const handleDeleteSession = async (e, sessionId) => {
-    e.stopPropagation();
-    e.preventDefault();
+  // 7.6 Visible copy confirmation & error feedback
+  const handleCopyMessage = async (msgId, text) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (!successful) throw new Error('execCommand failed');
+      }
+      setCopiedMessageId(msgId);
+      setCopyErrorId(null);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (err) {
+      console.error('Clipboard copy failed:', err);
+      setCopyErrorId(msgId);
+      setTimeout(() => setCopyErrorId(null), 2500);
+    }
+  };
 
-    // Optimistic removal from UI immediately
+  // 7.7 Delete chat session after user confirmation
+  const executeDeleteSession = async (sessionId) => {
     const remaining = sessions.filter((s) => s.id !== sessionId);
     setSessions(remaining);
 
@@ -176,7 +243,6 @@ export default function ChatPage() {
       await api.deleteChatSession(sessionId);
     } catch (err) {
       console.error('Failed to delete session:', err);
-      // Revert/refresh sessions on error
       loadSessions();
     }
   };
@@ -233,28 +299,130 @@ export default function ChatPage() {
     }
   };
 
-  // Send message
-  const handleSendMessage = async (textToSend) => {
+  // 7.3 Retry handler for failed messages
+  const handleRetryMessage = (msg) => {
+    const textToRetry = msg.content || msg.retryQuery;
+    const userMsgId = msg.id || msg.targetUserMsgId;
+    if (!textToRetry || isSending) return;
+
+    // Remove any previous connection error notice for this question
+    setMessages((prev) =>
+      prev.filter((m) => !(m.role === 'error' && (m.targetUserMsgId === userMsgId || m.retryQuery === textToRetry)))
+    );
+
+    handleSendMessage(textToRetry, userMsgId);
+  };
+
+  // Send message with sync state tracking & response timing (7.2, 7.3, 7.5)
+  const handleSendMessage = async (textToSend, retryUserMsgId = null) => {
     const query = (textToSend || inputPrompt).trim();
     if (!query || isSending) return;
 
-    setInputPrompt('');
+    if (!retryUserMsgId) {
+      setInputPrompt('');
+    }
     setIsSending(true);
 
-    // Optimistically append user message
-    const tempUserMsg = {
-      id: `temp_${Date.now()}`,
-      role: 'user',
-      content: query,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, tempUserMsg]);
+    const userMsgId = retryUserMsgId || `temp_${Date.now()}`;
+    const startTime = Date.now();
+
+    if (retryUserMsgId) {
+      // Re-trying previous failed message: update status to 'sending'
+      setMessages((prev) =>
+        prev.map((m) => (m.id === userMsgId ? { ...m, syncStatus: 'sending' } : m))
+      );
+    } else {
+      // 7.2 Optimistically append user message with 'sending' status
+      const tempUserMsg = {
+        id: userMsgId,
+        role: 'user',
+        content: query,
+        created_at: new Date().toISOString(),
+        syncStatus: 'sending', // 'sending' | 'saved' | 'synced' | 'failed'
+      };
+      setMessages((prev) => [...prev, tempUserMsg]);
+    }
+
+    // Step 2: Transition from 'sending' to 'saved' (confirmed in local store)
+    setTimeout(() => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === userMsgId && m.syncStatus === 'sending' ? { ...m, syncStatus: 'saved' } : m
+        )
+      );
+    }, 350);
+
+    const aiMsgId = `ai_${Date.now()}`;
+    let typingTicker = null;
 
     try {
       const langParam = preferredLanguage !== 'English' ? preferredLanguage : null;
-      const res = await api.sendMessage(query, langParam, activeSessionId);
 
-      if (res.session_id) {
+      // Optimistically create assistant message placeholder for progressive streaming
+      const initialAssistantMsg = {
+        id: aiMsgId,
+        role: 'assistant',
+        content: '',
+        source: '',
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, initialAssistantMsg]);
+
+      let targetText = '';
+      let displayedChars = 0;
+      let finalEventReceived = null;
+      let streamFinished = false;
+
+      // Smooth progressive typing animation ticker (fluid ~60fps letter-by-letter reveal)
+      typingTicker = setInterval(() => {
+        if (displayedChars < targetText.length) {
+          const delta = targetText.length - displayedChars;
+          const step = delta > 60 ? Math.ceil(delta / 5) : delta > 20 ? 3 : 2;
+          displayedChars = Math.min(targetText.length, displayedChars + step);
+          const currentSlice = targetText.slice(0, displayedChars);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === aiMsgId ? { ...m, content: currentSlice } : m))
+          );
+        } else if (streamFinished && finalEventReceived) {
+          clearInterval(typingTicker);
+          typingTicker = null;
+          const durationSec = Math.max(0.4, Number(((Date.now() - startTime) / 1000).toFixed(1)));
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === userMsgId) {
+                // 7.2 Only show 'synced' after confirmed response
+                return { ...m, syncStatus: 'synced' };
+              }
+              if (m.id === aiMsgId) {
+                return {
+                  ...m,
+                  content: finalEventReceived.answer || targetText,
+                  source: finalEventReceived.source || '',
+
+                };
+              }
+              return m;
+            })
+          );
+          setIsSending(false);
+        }
+      }, 18);
+
+      const res = await api.sendMessageStream(
+        query,
+        langParam,
+        activeSessionId,
+        (token, accumulated) => {
+          targetText = accumulated;
+        },
+        (doneEvent) => {
+          finalEventReceived = doneEvent;
+          targetText = doneEvent.answer || targetText;
+          streamFinished = true;
+        }
+      );
+
+      if (res && res.session_id) {
         const newSessionId = res.session_id;
         const updatedTitle = res.session_title || 'New Chat';
         setActiveSessionId(newSessionId);
@@ -281,29 +449,36 @@ export default function ChatPage() {
         }
       }
 
-      // Immediately render AI response without artificial delays
-      const fullText = res.answer || '';
-      const aiMsgId = `ai_${Date.now()}`;
-      const assistantMsg = {
-        id: aiMsgId,
-        role: 'assistant',
-        content: fullText,
-        source: res.source || 'academic_policies_and_attendance.md',
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      // If stream ended quickly, make sure final text catches up
+      if (res && res.answer) {
+        targetText = res.answer;
+        finalEventReceived = res;
+        streamFinished = true;
+      }
     } catch (err) {
-      console.error('Chat error:', err);
-      const errorMsg = {
-        id: `err_${Date.now()}`,
-        role: 'assistant',
-        content:
-          '⚠️ Connection error contacting the university copilot service. Please verify your connection or try again.',
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
+      if (typingTicker) clearInterval(typingTicker);
+      console.error('Chat streaming error:', err);
+
+      // 7.3 Mark message as failed, preserve query, remove assistant bubble, and show connection error
+      setMessages((prev) => {
+        const cleaned = prev
+          .filter((m) => m.id !== aiMsgId)
+          .map((m) => (m.id === userMsgId ? { ...m, syncStatus: 'failed' } : m));
+
+        return [
+          ...cleaned,
+          {
+            id: `err_${Date.now()}`,
+            role: 'error',
+            content: 'Connection error contacting the university copilot service. Please verify your connection or try again.',
+            created_at: new Date().toISOString(),
+            retryQuery: query,
+            targetUserMsgId: userMsgId,
+          },
+        ];
+      });
       setIsSending(false);
+    } finally {
       loadStudentContext();
     }
   };
@@ -329,7 +504,9 @@ export default function ChatPage() {
       .toUpperCase()
     : 'AS';
 
-  const overallAttPct = attendanceSummary?.overall_percentage || '83.2';
+  const attendanceAlertCount = attendanceSummary?.subject_records
+    ? attendanceSummary.subject_records.filter((s) => s.percentage < 75.0).length
+    : 0;
 
   return (
     <div className="min-h-screen bg-background text-on-surface flex overflow-hidden">
@@ -361,7 +538,8 @@ export default function ChatPage() {
               type="button"
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="flex items-center justify-center w-7 h-7 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer shrink-0"
-              title={sidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+              title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
               <span className="material-symbols-outlined text-[18px]">dock_to_left</span>
             </button>
@@ -387,12 +565,13 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* "+ New Copilot Chat" CTA Button */}
+          {/* "+ New Copilot Chat" CTA Button (7.9 Platform-aware shortcut) */}
           <div className={`${sidebarOpen ? 'px-space-md' : 'px-space-xs flex justify-center'} mb-space-md`}>
             <button
               type="button"
               onClick={() => handleNewChat(true)}
-              title={!sidebarOpen ? "New Copilot Chat (⌘K)" : undefined}
+              title={!sidebarOpen ? `New Copilot Chat (${shortcutLabel})` : undefined}
+              aria-label={`New Copilot Chat (${shortcutLabel})`}
               className={`flex items-center rounded-xl bg-primary-container text-on-primary hover:bg-primary transition-all shadow-md cursor-pointer active:scale-98 ${sidebarOpen
                   ? 'w-full justify-between px-space-md py-space-sm'
                   : 'w-10 h-10 justify-center p-0'
@@ -404,7 +583,7 @@ export default function ChatPage() {
               </span>
               {sidebarOpen && (
                 <span className="font-code-sm text-code-sm px-1.5 py-0.5 rounded bg-surface-container-lowest/20 text-on-primary text-[10px]">
-                  ⌘K
+                  {shortcutLabel}
                 </span>
               )}
             </button>
@@ -425,6 +604,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => { }}
               title={!sidebarOpen ? "Active Copilot" : undefined}
+              aria-label="Active Copilot"
               className={`flex items-center rounded-lg transition-colors bg-surface-container text-primary font-semibold cursor-pointer ${sidebarOpen
                   ? 'justify-between px-space-sm py-2 w-full'
                   : 'justify-center w-10 h-10 p-0'
@@ -440,21 +620,26 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => setActiveModal('attendance')}
-              title={!sidebarOpen ? `Course Attendance (${overallAttPct}%)` : undefined}
+              title={!sidebarOpen ? (attendanceAlertCount > 0 ? `Course Attendance (${attendanceAlertCount} Shortage)` : "Course Attendance") : undefined}
+              aria-label={attendanceAlertCount > 0 ? `Course Attendance (${attendanceAlertCount} subjects below 75%)` : "Course Attendance"}
               className={`flex items-center rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors cursor-pointer ${sidebarOpen
                   ? 'justify-between px-space-sm py-2 w-full'
                   : 'justify-center w-10 h-10 p-0'
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[20px] text-tertiary-container">fact_check</span>
+                <span className={`material-symbols-outlined text-[20px] ${attendanceAlertCount > 0 ? 'text-error' : 'text-tertiary-container'}`}>fact_check</span>
                 {sidebarOpen && <span className="font-label-md text-label-md">Course Attendance</span>}
               </div>
-              {sidebarOpen && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-high text-tertiary-container font-label-sm text-label-sm font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-tertiary-container"></span>
-                  {overallAttPct}%
-                </span>
+              {attendanceAlertCount > 0 && (
+                sidebarOpen ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-error font-label-sm text-label-sm font-semibold border border-rose-500/20">
+                    <span className="material-symbols-outlined text-[13px]">warning</span>
+                    <span>{attendanceAlertCount} Below 75%</span>
+                  </span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+                )
               )}
             </button>
 
@@ -463,6 +648,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => setActiveModal('timetable')}
               title={!sidebarOpen ? "Timetable & Schedule" : undefined}
+              aria-label="Timetable and Academic Schedule"
               className={`flex items-center rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors cursor-pointer ${sidebarOpen
                   ? 'justify-between px-space-sm py-2 w-full'
                   : 'justify-center w-10 h-10 p-0'
@@ -479,6 +665,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => setActiveModal('grievance')}
               title={!sidebarOpen ? `Student Grievances (${openTicketsCount} Open)` : undefined}
+              aria-label={`Student Grievances (${openTicketsCount} open)`}
               className={`flex items-center rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors cursor-pointer ${sidebarOpen
                   ? 'justify-between px-space-sm py-2 w-full'
                   : 'justify-center w-10 h-10 p-0'
@@ -500,6 +687,7 @@ export default function ChatPage() {
               type="button"
               onClick={() => setActiveModal('news')}
               title={!sidebarOpen ? "Campus Circulars" : undefined}
+              aria-label="Campus Circulars and Bulletins"
               className={`flex items-center rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors cursor-pointer ${sidebarOpen
                   ? 'justify-between px-space-sm py-2 w-full'
                   : 'justify-center w-10 h-10 p-0'
@@ -525,6 +713,7 @@ export default function ChatPage() {
             </div>
           )}
 
+          {/* 7.8 Keyboard-accessible session rows with buttons */}
           {sidebarOpen && (
             <div className="px-space-sm space-y-space-xs flex flex-col max-h-48 overflow-y-auto">
               {sessions.length === 0 ? (
@@ -535,24 +724,32 @@ export default function ChatPage() {
                 sessions.map((s) => (
                   <div
                     key={s.id}
-                    onClick={() => selectSession(s.id, s.title)}
-                    className={`group flex items-center justify-between gap-space-xs px-space-sm py-1.5 rounded-lg transition-colors cursor-pointer ${activeSessionId === s.id
+                    className={`group flex items-center justify-between gap-space-xs px-space-sm py-1.5 rounded-lg transition-colors ${activeSessionId === s.id
                         ? 'bg-surface-container text-primary font-medium'
                         : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                       }`}
                   >
-                    <div className="flex items-center gap-space-xs truncate min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => selectSession(s.id, s.title)}
+                      aria-label={`Open conversation: ${s.title}`}
+                      className="flex items-center gap-space-xs truncate min-w-0 flex-1 text-left bg-transparent border-none p-0 text-inherit font-inherit cursor-pointer outline-none focus-visible:underline"
+                    >
                       <span className="material-symbols-outlined text-[16px] text-outline shrink-0">
                         chat_bubble
                       </span>
                       <span className="font-label-md text-label-md truncate">{s.title}</span>
-                    </div>
+                    </button>
 
                     <button
                       type="button"
-                      onClick={(e) => handleDeleteSession(e, s.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDeleteSession(s);
+                      }}
                       className="opacity-60 hover:opacity-100 p-1 rounded-md hover:bg-rose-50 hover:text-error text-on-surface-variant transition-all cursor-pointer shrink-0 z-10"
                       title="Delete chat session"
+                      aria-label={`Delete conversation ${s.title}`}
                     >
                       <span className="material-symbols-outlined text-[16px]">delete</span>
                     </button>
@@ -608,46 +805,51 @@ export default function ChatPage() {
             }`}
         >
           <div className="flex items-center gap-space-sm">
-            {/* Mobile Sidebar Toggle */}
+            {/* 8.6 Mobile Sidebar Toggle (>= 44x44px touch target) */}
             <button
               type="button"
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer"
+              aria-label={sidebarOpen ? "Close sidebar menu" : "Open sidebar menu"}
+              className="lg:hidden min-w-[44px] min-h-[44px] p-2 rounded-xl hover:bg-surface-container text-on-surface-variant flex items-center justify-center cursor-pointer transition-colors"
             >
-              <span className="material-symbols-outlined text-[22px]">menu</span>
+              <span className="material-symbols-outlined text-[24px]">menu</span>
             </button>
 
-            <BrandLogo className="w-8 h-8" />
+            <BrandLogo className="w-8 h-8 shrink-0" />
             <span className="font-headline-sm text-headline-sm text-on-surface font-semibold hidden sm:inline">
               CampusMind AI
             </span>
           </div>
 
           <div className="flex items-center gap-space-sm sm:gap-space-md">
+            {/* Context Pill - Hidden on mobile to avoid crowded badges (8.6) */}
             <div className="hidden sm:flex items-center gap-space-xs px-space-sm py-1.5 rounded-xl bg-surface-container-low border border-surface-container text-on-surface-variant font-label-md text-label-md">
               <span className="material-symbols-outlined text-[16px] text-primary">school</span>
               <span>
-                {user?.branch || 'CSE'} • {user?.current_year || '1st Year'}
+                {user?.branch || 'CSE'} • {user?.current_year ? `${user.current_year} Year` : '2nd Year'}
               </span>
             </div>
 
+            {/* Circulars Button (>= 44x44px touch target) */}
             <button
               type="button"
               onClick={() => setActiveModal('news')}
-              className="relative flex items-center justify-center w-9 h-9 rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer border border-surface-container"
+              className="relative flex items-center justify-center min-w-[44px] min-h-[44px] rounded-xl text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer border border-surface-container"
               title="Campus Circulars"
+              aria-label="Campus circulars notifications"
             >
               <span className="material-symbols-outlined text-[20px]">notifications</span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-secondary"></span>
+              <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-secondary"></span>
             </button>
 
-            {/* Profile Avatar with Information Popover */}
+            {/* Profile Avatar with Information Popover (>= 44x44px touch target) */}
             <div className="relative" ref={profileMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-label-md text-label-md font-semibold shadow-xs hover:ring-2 hover:ring-primary/40 transition-all cursor-pointer"
+                className="min-w-[44px] min-h-[44px] rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-label-md text-label-md font-semibold shadow-xs hover:ring-2 hover:ring-primary/40 transition-all cursor-pointer"
                 title="View Student Profile"
+                aria-label="Student profile"
               >
                 {studentInitials}
               </button>
@@ -699,7 +901,7 @@ export default function ChatPage() {
                           <span className="material-symbols-outlined text-[15px] text-primary">calendar_today</span>
                           Academic Year
                         </span>
-                        <span className="font-semibold text-on-surface">{user?.current_year || '1st'} Year • Sem 1</span>
+                        <span className="font-semibold text-on-surface">{getAcademicYearLabel(user?.current_year)}</span>
                       </div>
 
                       <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-surface-container-low text-label-sm font-label-sm">
@@ -748,7 +950,7 @@ export default function ChatPage() {
               </AnimatePresence>
             </div>
 
-            {/* Logout Button at Far Right Corner of Top Bar */}
+            {/* Logout Button at Far Right Corner of Top Bar (8.6 >= 44px touch target) */}
             <button
               type="button"
               onClick={() => {
@@ -756,7 +958,8 @@ export default function ChatPage() {
                 navigate('/auth', { replace: true });
               }}
               title="Sign Out"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-low hover:bg-rose-50 text-on-surface-variant hover:text-error border border-surface-container hover:border-rose-200 transition-all cursor-pointer shadow-2xs group"
+              aria-label="Sign out"
+              className="flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl bg-surface-container-low hover:bg-rose-50 text-on-surface-variant hover:text-error border border-surface-container hover:border-rose-200 transition-all cursor-pointer shadow-2xs group"
             >
               <span className="material-symbols-outlined text-[18px] group-hover:text-error transition-colors">logout</span>
               <span className="hidden sm:inline font-label-md text-label-md font-medium group-hover:text-error">Sign Out</span>
@@ -778,13 +981,13 @@ export default function ChatPage() {
                   {activeSessionTitle}
                 </span>
                 <span className="hidden sm:flex px-2 py-0.5 rounded-full bg-surface-container-high text-primary font-label-sm text-label-sm items-center gap-1 font-semibold">
-                  {user?.branch || 'CSE'} • {user?.current_year || '1st Year'}
+                  {user?.branch || 'CSE'} • {user?.current_year ? `${user.current_year} Year` : '2nd Year'}
                 </span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-tertiary-container animate-pulse"></span>
-                  ERP Live Synced
+                  Firebase Activity Analytics
                 </span>
                 <span className="text-outline-variant font-code-sm text-code-sm">•</span>
                 <span className="font-body-sm text-body-sm text-on-surface-variant truncate">
@@ -797,10 +1000,10 @@ export default function ChatPage() {
 
         {/* 3. CHAT STREAM CONTENT AREA */}
         <main className="w-full flex-1 max-w-5xl mx-auto px-space-md py-space-md space-y-space-lg pb-44">
-          {/* Welcome / ERP Session Badge */}
+          {/* Welcome / Student Context Badge */}
           <div className="flex justify-center">
             <span className="px-3.5 py-1 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-medium shadow-2xs border border-surface-container">
-              Today • Academic ERP Session Connected • Spring 2026
+              Today • Demo-Generated Student Context Connected • Spring 2026
             </span>
           </div>
 
@@ -866,6 +1069,44 @@ export default function ChatPage() {
 
           {/* Messages Flow */}
           {messages.map((msg, index) => {
+            // 7.3 Dedicated connection error display (avoiding assistant styling)
+            if (msg.role === 'error') {
+              return (
+                <div key={msg.id || index} className="flex items-start gap-space-sm max-w-3xl mr-auto">
+                  <div className="p-space-md rounded-2xl bg-rose-500/10 border border-rose-500/20 text-on-surface flex items-start gap-space-sm shadow-xs w-full">
+                    <span className="material-symbols-outlined text-error text-[22px] shrink-0 mt-0.5">wifi_off</span>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-label-md text-label-md font-semibold text-error">Connection Issue</span>
+                        <span className="font-code-sm text-code-sm text-on-surface-variant text-[11px]">
+                          {formatMessageTimestamp(msg.created_at)}
+                        </span>
+                      </div>
+                      <p className="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                        {msg.content}
+                      </p>
+                      {msg.retryQuery && (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRetryMessage(msg)}
+                            className="px-3 py-1 rounded-lg bg-error hover:bg-rose-700 text-white font-label-sm text-label-sm font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                            aria-label="Retry question"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">refresh</span>
+                            <span>Retry</span>
+                          </button>
+                          <span className="font-body-sm text-body-sm text-on-surface-variant text-xs italic">
+                            Original question preserved
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             const isUser = msg.role === 'user';
 
             if (isUser) {
@@ -875,12 +1116,45 @@ export default function ChatPage() {
                     <div className="bg-inverse-surface text-inverse-on-surface rounded-2xl rounded-tr-xs px-space-md py-space-sm shadow-md font-body-md text-body-md leading-relaxed whitespace-pre-wrap">
                       {msg.content}
                     </div>
+
+                    {/* 7.1 Real timestamps & 7.2 Sync status progression */}
                     <div className="flex items-center gap-2 mt-1 text-on-surface-variant font-code-sm text-code-sm">
-                      <span>Just now</span>
+                      <span>{formatMessageTimestamp(msg.created_at)}</span>
                       <span>•</span>
-                      <span className="text-tertiary-container flex items-center gap-0.5">
-                        <span className="material-symbols-outlined text-[14px]">done_all</span> Synced
-                      </span>
+                      {msg.syncStatus === 'sending' ? (
+                        <span className="text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+                          <span>Sending...</span>
+                        </span>
+                      ) : msg.syncStatus === 'saved' ? (
+                        <span className="text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px]">done</span>
+                          <span>Saved</span>
+                        </span>
+                      ) : msg.syncStatus === 'failed' ? (
+                        <span className="text-error flex items-center gap-1 font-semibold">
+                          <span className="material-symbols-outlined text-[14px]">error</span>
+                          <span>Failed</span>
+                        </span>
+                      ) : (
+                        <span className="text-tertiary-container flex items-center gap-0.5">
+                          <span className="material-symbols-outlined text-[14px]">done_all</span>
+                          <span>Synced</span>
+                        </span>
+                      )}
+
+                      {/* 7.3 Retry button on failed user message */}
+                      {msg.syncStatus === 'failed' && (
+                        <button
+                          type="button"
+                          onClick={() => handleRetryMessage(msg)}
+                          className="ml-1 px-2 py-0.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-error font-medium text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                          aria-label="Retry sending message"
+                        >
+                          <span className="material-symbols-outlined text-[13px]">refresh</span>
+                          <span>Retry</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-label-md text-label-md font-semibold shadow-xs shrink-0">
@@ -891,19 +1165,66 @@ export default function ChatPage() {
             }
 
             // Assistant Response
-            const resolvedSource = (msg.source && msg.source.trim()) || 'academic_policies_and_attendance.md';
+            // 1. Detect any .md filename mentioned in the message text
+            const embeddedDocMatch = msg.content.match(/([a-zA-Z0-9_\-]+\.md)/i);
+            const embeddedDoc = embeddedDocMatch ? embeddedDocMatch[1].trim() : '';
+
+            const resolvedSource = (msg.source && msg.source.trim()) || embeddedDoc || '';
+            const isValidSource = Boolean(
+              resolvedSource &&
+              !['none', 'n/a', 'null', 'undefined', ''].includes(resolvedSource.toLowerCase())
+            );
+
             // Parse action tags like [ACTION:SHOW_COMPLAINT_FORM:Category|Title|Description]
             const actionRegex = /\[ACTION:SHOW_COMPLAINT_FORM:([^|\]]*)(?:\|([^|\]]*))?(?:\|([^\]]*))?\]/i;
             const actionMatch = msg.content.match(actionRegex);
-            const displayContent = msg.content.replace(actionRegex, '').trim();
+            
+            // Clean action tags AND any orphan .md citations from the display text so raw filenames never leak to user
+            let displayContent = msg.content
+              .replace(actionRegex, '')
+              .replace(/\[ACTION:[^\]]*$/i, '')
+              .replace(/\[ACTION$/i, '')
+              .trim();
+            displayContent = displayContent.replace(/[,;]?\s*(?:🏷️\s*)?(?:\*{1,2})?(?:Source|Document|Reference)?(?:\*{1,2})?:\s*\[?[a-zA-Z0-9_\-\.\s]+\.md\]?/gi, '');
+            displayContent = displayContent.replace(/[,;]?\s*\[?[a-zA-Z0-9_\-]+\.md\]?\s*$/gi, '').trim();
+            displayContent = displayContent.replace(/\n\s*[,;]\s*([a-zA-Z0-9_\-]+\.md)?/gi, '\n').trim();
+            displayContent = displayContent.replace(/[,;]\s*$/, '').trim();
 
-            const parsedCategory = actionMatch?.[1]?.trim() || (msg.content.toLowerCase().includes('academic') ? 'Academic Grievance' : 'Hostel Maintenance');
-            const parsedTitle = actionMatch?.[2]?.trim() || '';
+            // Detect grievance intent either from Gemini's action tag OR student's explicit complaint query
+            const msgLower = msg.content.toLowerCase();
+            const prevUserMsg = index > 0 ? (messages[index - 1]?.content?.toLowerCase() || '') : '';
+            const isGrievanceContext = Boolean(
+              actionMatch ||
+              ['complaint', 'grievance', 'lodge', 'file a complaint', 'ticket', 'issue with mess', 'complain on', 'packet loss', 'wifi', 'wi-fi', 'maintenance'].some(
+                (k) => prevUserMsg.includes(k) || msgLower.includes('form below') || msgLower.includes('instant form')
+              )
+            );
+
+            const hasTicketIntent = isGrievanceContext;
+
+            // Only suppress source footer for casual greetings
+            const isCasualGreeting = /^(hi|hello|hey|hola|namaste|good\s*(morning|evening|afternoon)|sup|yo|ok|okay)[\s!.,?]*$/i.test(prevUserMsg.trim());
+            const shouldShowSourceFooter = isValidSource && Boolean(displayContent) && !isCasualGreeting;
+
+            // Smart category & title resolution
+            let detectedCat = actionMatch?.[1]?.trim();
+            if (!detectedCat) {
+              if (prevUserMsg.includes('mess') || prevUserMsg.includes('food') || prevUserMsg.includes('hostel') || prevUserMsg.includes('room') || prevUserMsg.includes('water')) {
+                detectedCat = 'Hostel Maintenance';
+              } else if (prevUserMsg.includes('wifi') || prevUserMsg.includes('internet') || prevUserMsg.includes('portal') || prevUserMsg.includes('lab') || prevUserMsg.includes('packet loss')) {
+                detectedCat = 'IT & Campus Wi-Fi';
+              } else if (prevUserMsg.includes('exam') || prevUserMsg.includes('grade') || prevUserMsg.includes('mark') || prevUserMsg.includes('course') || prevUserMsg.includes('attendance')) {
+                detectedCat = 'Academic Grievance';
+              } else if (prevUserMsg.includes('fee') || prevUserMsg.includes('tuition') || prevUserMsg.includes('payment') || prevUserMsg.includes('fine')) {
+                detectedCat = 'Fee & Financial';
+              } else {
+                detectedCat = 'Hostel Maintenance';
+              }
+            }
+
+            const parsedCategory = detectedCat;
+            const parsedTitle = actionMatch?.[2]?.trim() || (prevUserMsg.includes('mess') ? 'Hostel Mess & Food Quality Concern' : (prevUserMsg.includes('wifi') || prevUserMsg.includes('packet loss')) ? 'Hostel Wi-Fi High Packet Loss' : 'Student Campus Concern');
             const parsedDesc = actionMatch?.[3]?.trim() || '';
-
-            // Only show InteractiveTicketCard if Gemini explicitly triggered ACTION:SHOW_COMPLAINT_FORM
-            // OR if the conversation specifically asks to file a new complaint/grievance
-            const hasTicketIntent = Boolean(actionMatch);
 
             return (
               <div key={msg.id || index} className="flex items-start gap-space-md max-w-4xl">
@@ -912,105 +1233,116 @@ export default function ChatPage() {
                 </div>
 
                 <div className="flex-1 flex flex-col space-y-space-sm min-w-0">
-                  <div className="bg-surface-container-lowest rounded-2xl rounded-tl-xs p-space-md sm:p-space-lg shadow-xs border border-surface-container flex flex-col space-y-space-md">
-                    {/* Header bar of response */}
-                    <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
-                      <div className="flex items-center gap-2">
-                        <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">
-                          Institutional Guidance
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1 text-on-surface-variant">
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard.writeText(displayContent || msg.content)}
-                          className="w-7 h-7 rounded hover:bg-surface-container flex items-center justify-center transition-colors cursor-pointer"
-                          title="Copy response"
-                        >
+                  <div className="group relative bg-surface-container-lowest rounded-2xl rounded-tl-xs p-space-md sm:p-space-lg shadow-xs border border-surface-container flex flex-col space-y-space-md">
+                    {/* 7.6 Floating corner copy action with visible confirmation / failure handling & aria-label */}
+                    {displayContent && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyMessage(msg.id || index, displayContent || msg.content)}
+                        className={`absolute top-3 right-3 px-2 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer z-10 text-xs font-medium ${
+                          copiedMessageId === (msg.id || index)
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                            : copyErrorId === (msg.id || index)
+                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                            : 'hover:bg-surface-container text-on-surface-variant hover:text-on-surface opacity-70 hover:opacity-100'
+                        }`}
+                        title={copiedMessageId === (msg.id || index) ? "Copied" : "Copy response"}
+                        aria-label={copiedMessageId === (msg.id || index) ? "Copied message" : "Copy message"}
+                      >
+                        {copiedMessageId === (msg.id || index) ? (
+                          <>
+                            <span className="material-symbols-outlined text-[15px] text-emerald-600">check</span>
+                            <span className="font-semibold text-[11px]">Copied</span>
+                          </>
+                        ) : copyErrorId === (msg.id || index) ? (
+                          <>
+                            <span className="material-symbols-outlined text-[15px] text-error">error</span>
+                            <span className="font-semibold text-[11px]">Failed</span>
+                          </>
+                        ) : (
                           <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                        </button>
-                      </div>
-                    </div>
+                        )}
+                      </button>
+                    )}
 
-                    {/* Markdown Body */}
+                    {/* Markdown Body or 7.4 Staged RAG Processing Pipeline */}
                     {displayContent ? (
-                      <div className="prose-chat font-body-md text-body-md text-on-surface leading-relaxed">
+                      <div className="prose-chat font-body-md text-body-md text-on-surface leading-relaxed pr-8 relative">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+                        {isSending && index === messages.length - 1 && (
+                          <span className="inline-block w-1.5 h-4 ml-1.5 bg-primary rounded-xs animate-pulse align-middle" />
+                        )}
+
+
                       </div>
                     ) : (
-                      <div className="font-body-md text-body-md text-on-surface">
-                        I've prepared the official grievance filing form below with priority SLA routing. Please provide any additional details and click submit:
-                      </div>
-                    )}
-
-                    {/* Interactive Ticket Quick-Action Card if applicable */}
-                    {hasTicketIntent && (
-                      <InteractiveTicketCard
-                        userProfile={user}
-                        category={parsedCategory}
-                        initialTitle={parsedTitle || (parsedCategory === 'Academic Grievance' ? 'Academic Concern / Discrepancy' : 'Hostel & Campus Facility Issue')}
-                        initialDescription={parsedDesc}
-                        onOpenGrievances={() => setActiveModal('grievance')}
-                      />
-                    )}
-
-                    {/* Official Source Citation Card (Core USP: 100% source-backed) */}
-                    <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs border-t border-surface-container">
-                      <div className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm">
-                        <span className="material-symbols-outlined text-[18px] text-primary">verified</span>
-                        <span>
-                          Source: <strong className="text-on-surface">{resolvedSource}</strong>
+                      /* 7.4 Dynamic multi-stage waiting indicator */
+                      <div className="flex items-center gap-3 py-1.5 text-on-surface-variant font-label-md text-label-md">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-primary animate-bounce"></span>
+                        </div>
+                        <span className="text-on-surface font-medium animate-pulse transition-all duration-300">
+                          {processingStage}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            window.open(
-                              `${API_BASE}/documents/view/${encodeURIComponent(resolvedSource.replace(/^\[+|\]+$/g, '').trim())}`,
-                              '_blank'
-                            )
-                          }
-                          className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-label-sm text-label-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                          title="Directly open formatted university gazette / policy"
-                        >
-                          <span>Open Gazette</span>
-                          <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenCitation(resolvedSource)}
-                          className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                          title="View institutional clause verification details"
-                        >
-                          <span>Clause Details</span>
-                          <span className="material-symbols-outlined text-[14px]">info</span>
-                        </button>
+                    )}
+
+                    {/* Interactive Ticket Quick-Action Card - RENDERS IMMEDIATELY WITHOUT DELAY */}
+                    {hasTicketIntent && (
+                      <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                        <InteractiveTicketCard
+                          userProfile={user}
+                          category={parsedCategory}
+                          initialTitle={parsedTitle || (parsedCategory === 'Academic Grievance' ? 'Academic Concern / Discrepancy' : 'Hostel & Campus Facility Issue')}
+                          initialDescription={parsedDesc}
+                          onOpenGrievances={() => setActiveModal('grievance')}
+                        />
                       </div>
-                    </div>
+                    )}
+
+                    {/* Knowledge-Base Source Citation Card - ONLY show if an authentic verified source was retrieved, content is present, and user asked an academic/institutional inquiry */}
+                    {shouldShowSourceFooter && (
+                      <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs border-t border-surface-container">
+                        <div className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm">
+                          <span className="material-symbols-outlined text-[18px] text-primary">verified</span>
+                          <span>
+                            Knowledge-Base Source: <strong className="text-on-surface">{resolvedSource}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                `${API_BASE}/documents/view/${encodeURIComponent(resolvedSource.replace(/^\[+|\]+$/g, '').trim())}`,
+                                '_blank'
+                              )
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-label-sm text-label-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Directly open formatted university gazette / policy"
+                          >
+                            <span>Open Gazette</span>
+                            <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCitation(resolvedSource)}
+                            className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                            title="View institutional clause verification details"
+                          >
+                            <span>Clause Details</span>
+                            <span className="material-symbols-outlined text-[14px]">info</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             );
           })}
-
-          {/* Typing Indicator */}
-          {isSending && (
-            <div className="flex items-start gap-space-md max-w-4xl">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-secondary text-on-primary flex items-center justify-center shadow-md shrink-0">
-                <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-              </div>
-              <div className="bg-surface-container-lowest rounded-2xl rounded-tl-xs px-space-md py-3 shadow-xs border border-surface-container flex items-center gap-3 text-on-surface-variant font-label-md text-label-md">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]"></span>
-                  <span className="w-2 h-2 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]"></span>
-                  <span className="w-2 h-2 rounded-full bg-primary animate-bounce"></span>
-                </div>
-                <span className="text-on-surface font-medium">CampusMind is thinking...</span>
-              </div>
-            </div>
-          )}
 
           <div ref={messagesEndRef} />
         </main>
@@ -1047,7 +1379,8 @@ export default function ChatPage() {
                     ? 'bg-rose-500 text-white animate-pulse'
                     : 'text-on-surface-variant hover:text-primary hover:bg-surface-container'
                   }`}
-                title="Voice Query"
+                title={isListening ? "Stop voice recording" : "Voice Query"}
+                aria-label={isListening ? "Stop voice recording" : "Voice input"}
               >
                 <span className="material-symbols-outlined text-[20px]">mic</span>
               </button>
@@ -1071,6 +1404,8 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => handleSendMessage()}
                 disabled={!inputPrompt.trim() || isSending}
+                title="Send message"
+                aria-label="Send message"
                 className="w-10 h-10 rounded-full bg-gradient-to-r from-primary-container to-secondary text-on-primary flex items-center justify-center shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
               >
                 <span className="material-symbols-outlined text-[20px]">arrow_upward</span>
@@ -1083,6 +1418,67 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* 7.7 CONFIRM CHAT DELETION MODAL */}
+      <AnimatePresence>
+        {confirmDeleteSession && (
+          <div
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setConfirmDeleteSession(null);
+            }}
+            className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-delete-title"
+              className="bg-surface-container-lowest rounded-2xl max-w-md w-full p-space-lg shadow-2xl border border-surface-container flex flex-col space-y-space-md outline-none"
+            >
+              <div className="flex items-start gap-space-sm">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-error flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">delete_forever</span>
+                </div>
+                <div className="flex flex-col">
+                  <h3 id="confirm-delete-title" className="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                    Delete this conversation?
+                  </h3>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                    This cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-surface-container-low px-3 py-2 rounded-xl text-label-sm font-label-sm text-on-surface truncate border border-surface-container">
+                {confirmDeleteSession.title}
+              </div>
+
+              <div className="flex justify-end items-center gap-space-sm pt-space-xs">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteSession(null)}
+                  className="px-space-md py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sid = confirmDeleteSession.id;
+                    setConfirmDeleteSession(null);
+                    executeDeleteSession(sid);
+                  }}
+                  className="px-space-md py-2 rounded-xl bg-error hover:bg-rose-700 text-white font-label-md text-label-md font-semibold cursor-pointer shadow-xs transition-all"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* 5. MODALS & DRAWERS */}
       <AttendanceModal

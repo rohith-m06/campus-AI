@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { API_BASE } from '../services/api';
+import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
 
 export default function CitationModal({ isOpen, onClose, citationData }) {
+  const modalRef = useRef(null);
+
+  useModalAccessibility({ isOpen, onClose, modalRef });
+
   if (!isOpen || !citationData) return null;
 
   const docName = citationData.document || citationData.source || 'academic_policies_and_attendance.md';
@@ -19,22 +24,32 @@ export default function CitationModal({ isOpen, onClose, citationData }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md">
+    <div
+      onClick={(e) => handleBackdropClick(e, onClose)}
+      className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md"
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="citation-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        tabIndex={-1}
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-surface-container-lowest rounded-2xl max-w-xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md border border-surface-container"
+        className="bg-surface-container-lowest rounded-2xl max-w-xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md border border-surface-container outline-none"
       >
         <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[24px]">verified</span>
-            <h3 className="font-headline-md text-headline-md text-on-surface font-semibold">
+            <h3 id="citation-modal-title" className="font-headline-md text-headline-md text-on-surface font-semibold">
               Verified Institutional Clause
             </h3>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close citation modal"
             className="w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined">close</span>
@@ -58,6 +73,7 @@ export default function CitationModal({ isOpen, onClose, citationData }) {
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close citation modal dialog"
             className="px-space-md py-2 rounded-xl bg-surface-container text-on-surface hover:bg-surface-container-high font-label-md text-label-md cursor-pointer transition-colors"
           >
             Close

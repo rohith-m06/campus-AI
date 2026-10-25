@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import Icon from './Icon';
 
 export default function InteractiveTicketCard({
   category = 'Hostel Maintenance',
@@ -54,7 +55,7 @@ export default function InteractiveTicketCard({
     return (
       <div className="rounded-xl bg-surface-container p-space-sm border border-surface-container-high opacity-60 flex items-center justify-between">
         <span className="font-label-md text-label-md text-on-surface flex items-center gap-1.5">
-          <span className="material-symbols-outlined text-tertiary-container text-[18px]">check_circle</span>
+          <Icon name="check_circle" className="w-4 h-4 text-tertiary-container" />
           Grievance inquiry marked as resolved by student.
         </span>
         <button
@@ -73,7 +74,7 @@ export default function InteractiveTicketCard({
       <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-space-md flex flex-col gap-space-xs text-emerald-900 shadow-2xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 font-headline-sm text-headline-sm font-semibold">
-            <span className="material-symbols-outlined text-emerald-700 text-[20px]">verified</span>
+            <Icon name="verified" className="w-5 h-5 text-emerald-700" />
             <span>Ticket Escalated: {submittedTicket?.ticket_number || '#HSTL-DISPATCH'}</span>
           </div>
           <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800 font-code-sm text-code-sm font-semibold">
@@ -91,7 +92,7 @@ export default function InteractiveTicketCard({
             className="text-emerald-800 hover:text-emerald-950 font-label-md text-label-md font-semibold underline flex items-center gap-1 cursor-pointer"
           >
             <span>View in Grievance Redressal Portal</span>
-            <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+            <Icon name="open_in_new" className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -103,7 +104,7 @@ export default function InteractiveTicketCard({
       <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
         <div className="flex items-center gap-space-xs">
           <div className="w-8 h-8 rounded-lg bg-secondary-fixed flex items-center justify-center text-secondary">
-            <span className="material-symbols-outlined text-[18px]">support_agent</span>
+            <Icon name="support_agent" className="w-4 h-4 text-secondary" />
           </div>
           <div>
             <h4 className="font-headline-sm text-headline-sm text-on-surface font-semibold">
@@ -121,7 +122,7 @@ export default function InteractiveTicketCard({
 
       {error && (
         <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-body-sm font-body-sm flex items-center gap-2">
-          <span className="material-symbols-outlined text-[16px]">error</span>
+          <Icon name="error" className="w-4 h-4 text-rose-600" />
           <span>{error}</span>
         </div>
       )}
@@ -182,9 +183,7 @@ export default function InteractiveTicketCard({
             onClick={handleEscalate}
             className="px-space-md py-2 rounded-lg bg-secondary text-on-secondary hover:brightness-105 font-label-md text-label-md font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
           >
-            <span className="material-symbols-outlined text-[18px]">
-              {submitting ? 'sync' : 'send'}
-            </span>
+            <Icon name={submitting ? 'sync' : 'send'} className={`w-4 h-4 ${submitting ? 'animate-spin' : ''}`} />
             <span>{submitting ? 'Submitting...' : 'Submit Grievance Now'}</span>
           </button>
 
@@ -203,7 +202,7 @@ export default function InteractiveTicketCard({
           className="text-primary hover:underline font-label-md text-label-md flex items-center gap-1 cursor-pointer"
         >
           <span>Open Grievances Portal</span>
-          <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          <Icon name="arrow_forward" className="w-4 h-4" />
         </button>
       </div>
     </div>

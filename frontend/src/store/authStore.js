@@ -41,7 +41,7 @@ export const useAuthStore = create((set, get) => ({
     } catch (err) {
       console.warn('Background profile sync note:', err.message || err);
       // Only logout on explicit 401 unauthorized
-      if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('not authenticated'))) {
+      if (err.status === 401) {
         get().logout();
       }
       set({ isLoading: false });

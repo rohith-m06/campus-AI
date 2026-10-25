@@ -80,3 +80,13 @@ backend/campusmind.db
 Thumbs.db
 *.log
 stitch_campusmind_ai_copilot/
+
+# ==========================================
+# Video Generation & Studio Artifacts (Ignored)
+# ==========================================
+video_studio/
+films/
+.agents/
+.pytest_cache/
+skills-lock.json
+

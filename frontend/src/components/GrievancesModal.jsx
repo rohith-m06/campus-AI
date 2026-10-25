@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
+import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
 
 export default function GrievancesModal({ isOpen, onClose, userProfile, onTicketCreated }) {
   const [tickets, setTickets] = useState([]);
@@ -9,6 +10,9 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const modalRef = useRef(null);
+
+  useModalAccessibility({ isOpen, onClose, modalRef });
 
   const [formData, setFormData] = useState({
     category: 'Wi-Fi & Campus IT Systems',
@@ -92,12 +96,21 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
   ).length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg">
+    <div
+      onClick={(e) => handleBackdropClick(e, onClose)}
+      className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg"
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="grievance-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        tabIndex={-1}
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
-        className="relative bg-surface-container-lowest rounded-2xl max-w-5xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container"
+        className="relative bg-surface-container-lowest rounded-2xl max-w-5xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container outline-none"
       >
         {/* Top Right Close Button for Section Component */}
         <button
@@ -124,7 +137,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                   UGC Redressal Compliance 2024
                 </span>
               </div>
-              <h1 className="font-headline-lg text-headline-lg text-on-surface tracking-tight font-semibold">
+              <h1 id="grievance-modal-title" className="font-headline-lg text-headline-lg text-on-surface tracking-tight font-semibold">
                 Student Grievance Redressal Portal
               </h1>
               <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -255,7 +268,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                     {tickets.length}
                   </span>
                   <span className="font-label-md text-label-md text-on-surface-variant">
-                    Logged in ERP
+                    Logged in System
                   </span>
                 </div>
                 <div className="mt-space-xs w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">

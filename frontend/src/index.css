@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -61,17 +63,17 @@
   --spacing-margin-md: 2rem;
   --spacing-margin-lg: 3rem;
 
-  --font-headline-xl: "Outfit", sans-serif;
-  --font-headline-lg: "Outfit", sans-serif;
-  --font-headline-md: "Outfit", sans-serif;
-  --font-headline-sm: "Outfit", sans-serif;
-  --font-display-lg: "Outfit", sans-serif;
-  --font-body-lg: "Inter", sans-serif;
-  --font-body-md: "Inter", sans-serif;
-  --font-body-sm: "Inter", sans-serif;
-  --font-label-md: "Inter", sans-serif;
-  --font-label-sm: "Inter", sans-serif;
-  --font-code-sm: "Inter", monospace;
+  --font-headline-xl: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-headline-lg: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-headline-md: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-headline-sm: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display-lg: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body-lg: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body-md: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body-sm: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-label-md: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-label-sm: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-code-sm: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 @layer base {
@@ -83,7 +85,7 @@
   body {
     background-color: #faf8ff;
     color: #131b2e;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
     padding: 0;
     -webkit-font-smoothing: antialiased;
@@ -96,18 +98,18 @@
   }
 }
 
-/* Material Typography utility mappings */
-.font-display-lg, .text-display-lg { font-size: 40px; line-height: 48px; letter-spacing: -0.025em; font-weight: 600; font-family: 'Outfit', sans-serif; }
-.font-headline-xl, .text-headline-xl { font-size: 32px; line-height: 40px; letter-spacing: -0.02em; font-weight: 600; font-family: 'Outfit', sans-serif; }
-.font-headline-lg, .text-headline-lg { font-size: 24px; line-height: 32px; letter-spacing: -0.015em; font-weight: 600; font-family: 'Outfit', sans-serif; }
-.font-headline-md, .text-headline-md { font-size: 20px; line-height: 28px; letter-spacing: -0.01em; font-weight: 500; font-family: 'Outfit', sans-serif; }
-.font-headline-sm, .text-headline-sm { font-size: 16px; line-height: 24px; letter-spacing: 0em; font-weight: 500; font-family: 'Outfit', sans-serif; }
-.font-body-lg, .text-body-lg { font-size: 16px; line-height: 26px; letter-spacing: -0.01em; font-weight: 400; font-family: 'Inter', sans-serif; }
-.font-body-md, .text-body-md { font-size: 14px; line-height: 22px; letter-spacing: 0em; font-weight: 400; font-family: 'Inter', sans-serif; }
-.font-body-sm, .text-body-sm { font-size: 12px; line-height: 18px; letter-spacing: 0.005em; font-weight: 400; font-family: 'Inter', sans-serif; }
-.font-label-md, .text-label-md { font-size: 13px; line-height: 18px; letter-spacing: 0.01em; font-weight: 500; font-family: 'Inter', sans-serif; }
-.font-label-sm, .text-label-sm { font-size: 11px; line-height: 16px; letter-spacing: 0.04em; font-weight: 600; font-family: 'Inter', sans-serif; }
-.font-code-sm, .text-code-sm { font-size: 12px; line-height: 16px; letter-spacing: -0.01em; font-weight: 500; font-family: 'Inter', monospace; }
+/* Material Typography utility mappings with modern font stacks */
+.font-display-lg, .text-display-lg { font-size: 40px; line-height: 48px; letter-spacing: -0.025em; font-weight: 600; font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-headline-xl, .text-headline-xl { font-size: 32px; line-height: 40px; letter-spacing: -0.02em; font-weight: 600; font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-headline-lg, .text-headline-lg { font-size: 24px; line-height: 32px; letter-spacing: -0.015em; font-weight: 600; font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-headline-md, .text-headline-md { font-size: 20px; line-height: 28px; letter-spacing: -0.01em; font-weight: 500; font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-headline-sm, .text-headline-sm { font-size: 16px; line-height: 24px; letter-spacing: 0em; font-weight: 500; font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-body-lg, .text-body-lg { font-size: 16px; line-height: 26px; letter-spacing: -0.01em; font-weight: 400; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-body-md, .text-body-md { font-size: 14px; line-height: 22px; letter-spacing: 0em; font-weight: 400; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-body-sm, .text-body-sm { font-size: 12px; line-height: 18px; letter-spacing: 0.005em; font-weight: 400; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-label-md, .text-label-md { font-size: 13px; line-height: 18px; letter-spacing: 0.01em; font-weight: 500; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-label-sm, .text-label-sm { font-size: 11px; line-height: 16px; letter-spacing: 0.04em; font-weight: 600; font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.font-code-sm, .text-code-sm { font-size: 12px; line-height: 16px; letter-spacing: -0.01em; font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; }
 
 /* Custom scrollbars */
 ::-webkit-scrollbar {

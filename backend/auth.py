@@ -7,7 +7,14 @@ Authentication utilities for CampusMind AI:
 
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")
+
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -17,7 +24,10 @@ from backend.database import get_db
 from backend.models import User
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET", "campusmind_production_secure_jwt_key_987654321")
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
 

@@ -4,6 +4,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../services/api';
 import BrandLogo from '../components/BrandLogo';
+import {
+  ShieldCheck,
+  Languages,
+  Database,
+  FileText,
+  Lock,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -38,16 +50,18 @@ export default function AuthPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  // Demo accounts
+  // Demo accounts configuration (active when DEMO_MODE=true)
+  const isDemoMode = (import.meta.env.VITE_DEMO_MODE ?? import.meta.env.DEMO_MODE ?? 'true').toString().toLowerCase() !== 'false';
+
   const demoAccounts = [
     {
       name: 'Arjun Sharma',
       email: 'arjun.sharma@campus.edu',
       roll: '24CSE101',
       branch: 'CSE',
-      year: '1st',
+      year: '2nd',
       batch: '2024-2028',
-      hostel: 'Hostel Block A',
+      hostel: 'Hostel Block B (Room 304)',
       phone: '+91 98765 43210',
     },
     {
@@ -55,25 +69,33 @@ export default function AuthPage() {
       email: 'priya.patel@campus.edu',
       roll: '23ECE044',
       branch: 'ECE',
-      year: '2nd',
+      year: '3rd',
       batch: '2023-2027',
-      hostel: 'Day Scholar',
-      phone: '+91 98765 43211',
+      hostel: 'Hostel Block A (Room 112)',
+      phone: '+91 98765 12345',
     },
     {
       name: 'Rahul Verma',
       email: 'rahul.verma@campus.edu',
-      roll: '22MEC012',
+      roll: '22MECH012',
       branch: 'MECH',
-      year: '3rd',
+      year: '4th',
       batch: '2022-2026',
-      hostel: 'Hostel Block B',
-      phone: '+91 98765 43212',
+      hostel: 'Day Scholar',
+      phone: '+91 98111 22334',
     },
   ];
 
   // 1-Click Instant Login for Demo Profiles
   const handleQuickLogin = async (profile) => {
+    setActiveTab('signin');
+    if (!isDemoMode) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Demo 1-click login is disabled in non-demo mode. Please sign in with your credentials.',
+      });
+      return;
+    }
     setIsLoading(true);
     setStatusMessage({
       type: 'info',
@@ -81,6 +103,10 @@ export default function AuthPage() {
     });
 
     try {
+      // Set form fields for clarity
+      setLoginEmail(profile.email);
+      setLoginPassword('Campus@123');
+
       // Attempt login with default demo password
       const res = await api.login({
         email: profile.email,
@@ -93,36 +119,14 @@ export default function AuthPage() {
       });
       setTimeout(() => {
         navigate('/', { replace: true });
-      }, 500);
+      }, 400);
     } catch (err) {
-      // If user not in DB yet, auto-register them seamlessly
-      try {
-        const regRes = await api.register({
-          full_name: profile.name,
-          email: profile.email,
-          password: 'Campus@123',
-          student_id: profile.roll,
-          branch: profile.branch,
-          current_year: profile.year,
-          batch: profile.batch,
-          hostel_status: profile.hostel,
-          phone_number: profile.phone,
-        });
-        setAuth(regRes.access_token, regRes.user);
-        setStatusMessage({
-          type: 'success',
-          text: `Demo persona initialized. Welcome, ${regRes.user.full_name}!`,
-        });
-        setTimeout(() => {
-          navigate('/', { replace: true });
-        }, 500);
-      } catch (regErr) {
-        setStatusMessage({
-          type: 'error',
-          text: regErr.message || 'Authentication error. Please try manually.',
-        });
-        setIsLoading(false);
-      }
+      console.error('Demo authentication error:', err);
+      setStatusMessage({
+        type: 'error',
+        text: err.message || 'Authentication error. Please sign in manually with password Campus@123.',
+      });
+      setIsLoading(false);
     }
   };
 
@@ -228,7 +232,7 @@ export default function AuthPage() {
                   <div className="flex items-center gap-space-xs">
                     <span className="font-headline-lg text-headline-lg text-on-surface tracking-tight">CampusMind AI</span>
                     <span className="bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold">
-                      Production
+                      Hackathon Demo
                     </span>
                   </div>
                   <p className="font-label-md text-label-md text-primary font-medium">
@@ -238,7 +242,7 @@ export default function AuthPage() {
               </div>
 
               <h1 className="font-display-lg text-display-lg text-on-surface mt-space-sm leading-tight">
-                100% Accurate, <span className="text-primary-container">Citation-Backed</span> Answers for Your Exact Branch &amp; Semester.
+                <span className="text-primary-container">Citation-Grounded</span> Answers for Your Exact Branch &amp; Semester.
               </h1>
               <p className="font-body-lg text-body-lg text-on-surface-variant max-w-xl">
                 Direct deterministic ingestion of your faculty syllabus, grade regulations, real-time timetable shifts, and authorized circulars.
@@ -250,18 +254,18 @@ export default function AuthPage() {
               {/* Feature 1 */}
               <article className="bg-surface-container-lowest p-space-md rounded-xl shadow-xs border border-surface-container flex flex-col gap-space-xs hover:border-primary-fixed transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-[20px] fill-1">verified_user</span>
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Zero Hallucinations</h2>
+                <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Citation-Grounded Answers</h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  Grounded strictly in your university's official curriculum, syllabus, and circulars. Zero generalized noise.
+                  Grounded strictly in your university's verified curriculum, syllabus, and official circular documents.
                 </p>
               </article>
 
               {/* Feature 2 */}
               <article className="bg-surface-container-lowest p-space-md rounded-xl shadow-xs border border-surface-container flex flex-col gap-space-xs hover:border-primary-fixed transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-secondary">
-                  <span className="material-symbols-outlined text-[20px] fill-1">translate</span>
+                  <Languages className="w-5 h-5" />
                 </div>
                 <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Multilingual Fluent</h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -272,18 +276,18 @@ export default function AuthPage() {
               {/* Feature 3 */}
               <article className="bg-surface-container-lowest p-space-md rounded-xl shadow-xs border border-surface-container flex flex-col gap-space-xs hover:border-primary-fixed transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary-container">
-                  <span className="material-symbols-outlined text-[20px] fill-1">dataset_linked</span>
+                  <Database className="w-5 h-5" />
                 </div>
                 <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Instant Context Injection</h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  Your branch, roll number, and live ERP attendance injected silently into every query prompt automatically.
+                  Your branch, roll number, and demo-generated student context injected silently into every query prompt automatically.
                 </p>
               </article>
 
               {/* Feature 4 */}
               <article className="bg-surface-container-lowest p-space-md rounded-xl shadow-xs border border-surface-container flex flex-col gap-space-xs hover:border-primary-fixed transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-tertiary-container">
-                  <span className="material-symbols-outlined text-[20px] fill-1">history_edu</span>
+                  <FileText className="w-5 h-5" />
                 </div>
                 <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Verifiable Citations</h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -291,58 +295,13 @@ export default function AuthPage() {
                 </p>
               </article>
             </div>
-
-            {/* 1-Click Demo Evaluation Profiles */}
-            <div className="bg-surface-container-low p-space-md rounded-xl shadow-xs border border-surface-container-high flex flex-col gap-space-sm">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider font-semibold">
-                  1-Click Evaluation Profiles (Instant Access)
-                </span>
-                <span className="inline-flex items-center gap-1 font-code-sm text-code-sm text-primary font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim animate-pulse"></span> Sandbox Ready
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-xs">
-                {demoAccounts.map((profile) => (
-                  <button
-                    key={profile.roll}
-                    type="button"
-                    onClick={() => handleQuickLogin(profile)}
-                    disabled={isLoading}
-                    className="group flex flex-col items-start p-space-sm bg-surface-container-lowest rounded-lg hover:bg-surface-container border border-surface-container hover:border-primary-container transition-all text-left shadow-2xs cursor-pointer active:scale-98 disabled:opacity-50"
-                  >
-                    <span className="inline-flex items-center gap-1 font-label-md text-label-md font-semibold text-on-surface group-hover:text-primary">
-                      ⚡ {profile.name}
-                    </span>
-                    <span className="font-code-sm text-code-sm text-on-surface-variant">
-                      {profile.year} {profile.branch} • {profile.roll}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* System Status Indicator Footer */}
-            <div className="flex items-center justify-between text-on-surface-variant pt-space-xs text-xs">
-              <div className="flex items-center gap-space-xs">
-                <span className="material-symbols-outlined text-[16px] text-tertiary">lock</span>
-                <span className="font-label-sm text-label-sm">Institutional SSO Enabled</span>
-              </div>
-              <div className="flex items-center gap-space-xs">
-                <span className="material-symbols-outlined text-[16px] text-primary">security</span>
-                <span className="font-label-sm text-label-sm">256-bit Encrypted ERP Bridge</span>
-              </div>
-              <div className="flex items-center gap-space-xs">
-                <span className="material-symbols-outlined text-[16px] text-secondary">memory</span>
-                <span className="font-label-sm text-label-sm">LLM Grounding v4.2</span>
-              </div>
-            </div>
           </section>
 
-          {/* Right Column: Interactive Auth Card with 9 Profile Fields */}
-          <section className="lg:col-span-6 bg-surface-container-lowest rounded-2xl shadow-xl border border-surface-container p-space-lg flex flex-col gap-space-md relative overflow-hidden">
-            {/* Ambient Decorative AI Glow Accent */}
-            <div className="absolute -top-16 -right-16 w-52 h-52 bg-primary-fixed opacity-40 rounded-full blur-3xl pointer-events-none"></div>
+          {/* Right Column: Interactive Auth Card with 9 Profile Fields & Sandbox Profiles Below */}
+          <div className="lg:col-span-6 flex flex-col gap-space-md">
+            <section className="bg-surface-container-lowest rounded-2xl shadow-xl border border-surface-container p-space-lg flex flex-col gap-space-md relative overflow-hidden">
+              {/* Ambient Decorative AI Glow Accent */}
+              <div className="absolute -top-16 -right-16 w-52 h-52 bg-primary-fixed opacity-40 rounded-full blur-3xl pointer-events-none"></div>
 
             {/* Auth Tabs Toggle */}
             <div className="flex items-center bg-surface-container-low p-1 rounded-xl relative z-10">
@@ -400,13 +359,13 @@ export default function AuthPage() {
                       : 'bg-primary-fixed/50 text-primary border-primary-fixed'
                     }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">
-                    {statusMessage.type === 'success'
-                      ? 'check_circle'
-                      : statusMessage.type === 'error'
-                        ? 'error'
-                        : 'sync'}
-                  </span>
+                  {statusMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  ) : statusMessage.type === 'error' ? (
+                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                  ) : (
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                  )}
                   <span>{statusMessage.text}</span>
                 </motion.div>
               )}
@@ -425,7 +384,10 @@ export default function AuthPage() {
                     type="email"
                     required
                     value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
+                    onChange={(e) => {
+                      setLoginEmail(e.target.value);
+                      if (statusMessage) setStatusMessage(null);
+                    }}
                     placeholder="arjun.sharma@campus.edu"
                     className="w-full h-11 px-3.5 bg-surface-container-low text-on-surface rounded-xl font-body-md text-body-md border border-surface-container-high placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:border-primary transition-all"
                   />
@@ -444,32 +406,35 @@ export default function AuthPage() {
                       type={showPassword ? 'text' : 'password'}
                       required
                       value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
+                      onChange={(e) => {
+                        setLoginPassword(e.target.value);
+                        if (statusMessage) setStatusMessage(null);
+                      }}
                       placeholder="••••••••••••"
                       className="w-full h-11 pl-3.5 pr-11 bg-surface-container-low text-on-surface rounded-xl font-body-md text-body-md border border-surface-container-high placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:border-primary transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                       className="absolute right-3 text-outline hover:text-on-surface p-1 rounded cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[18px]">
-                        {showPassword ? 'visibility_off' : 'visibility'}
-                      </span>
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-on-surface-variant font-body-sm text-body-sm">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input type="checkbox" defaultChecked className="w-4 h-4 rounded text-primary accent-primary" />
-                    <span>Keep session active for 30 days</span>
-                  </label>
+                <div className="flex items-center justify-end text-on-surface-variant font-body-sm text-body-sm">
                   <button
                     type="button"
                     onClick={() => {
                       setLoginEmail('arjun.sharma@campus.edu');
                       setLoginPassword('Campus@123');
+                      setStatusMessage(null);
                     }}
                     className="text-primary hover:underline font-label-md text-label-md cursor-pointer"
                   >
@@ -482,9 +447,11 @@ export default function AuthPage() {
                   disabled={isLoading}
                   className="mt-space-xs w-full h-11 bg-gradient-to-r from-primary-container to-secondary text-on-primary font-headline-sm text-headline-sm rounded-xl flex items-center justify-center gap-space-xs shadow-md hover:brightness-105 active:scale-99 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[20px]">
-                    {isLoading ? 'sync' : 'lock'}
-                  </span>
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Lock className="w-4 h-4" />
+                  )}
                   <span>{isLoading ? 'Authenticating...' : 'Authenticate & Launch Copilot'}</span>
                 </button>
               </form>
@@ -542,11 +509,14 @@ export default function AuthPage() {
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
                         className="absolute right-2.5 text-outline hover:text-on-surface p-1 rounded cursor-pointer"
                       >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {showPassword ? 'visibility_off' : 'visibility'}
-                        </span>
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -672,9 +642,11 @@ export default function AuthPage() {
                   disabled={isLoading}
                   className="mt-space-xs w-full h-11 bg-gradient-to-r from-primary-container to-secondary text-on-primary font-headline-sm text-headline-sm rounded-xl flex items-center justify-center gap-space-xs shadow-md hover:brightness-105 active:scale-99 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[20px]">
-                    {isLoading ? 'sync' : 'lock'}
-                  </span>
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Lock className="w-4 h-4" />
+                  )}
                   <span>{isLoading ? 'Registering...' : 'Complete Registration & Launch Copilot'}</span>
                 </button>
               </form>
@@ -697,17 +669,50 @@ export default function AuthPage() {
               </p>
             </div>
 
-            {/* Compliance & Encryption Signature */}
+            {/* Platform Capabilities Signature */}
             <footer className="mt-auto pt-space-md flex items-center justify-between text-outline font-label-sm text-label-sm border-t border-surface-container relative z-10">
               <span>Institutional Single Sign-On</span>
               <span className="w-1 h-1 rounded-full bg-outline"></span>
-              <span>FERPA &amp; GDPR Compliant</span>
+              <span>Citation-Grounded Answers</span>
               <span className="w-1 h-1 rounded-full bg-outline"></span>
-              <span>Zero Retention Vector Store</span>
+              <span>Firebase Activity Analytics</span>
             </footer>
           </section>
+
+          {/* 1-Click Evaluation Profiles (Shifted Below Signin Component) */}
+          {isDemoMode && (
+            <div className="bg-surface-container-lowest p-space-md rounded-2xl shadow-xl border border-surface-container flex flex-col gap-space-sm relative z-10">
+              <div className="flex items-center justify-between">
+                <span className="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider font-semibold">
+                  1-Click Evaluation Profiles (Instant Access)
+                </span>
+                <span className="inline-flex items-center gap-1 font-code-sm text-code-sm text-primary font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-tertiary-fixed-dim animate-pulse"></span> Sandbox Ready
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-xs">
+                {demoAccounts.map((profile) => (
+                  <button
+                    key={profile.roll}
+                    type="button"
+                    onClick={() => handleQuickLogin(profile)}
+                    disabled={isLoading}
+                    className="group flex flex-col items-start p-space-sm bg-surface-container-low rounded-xl hover:bg-surface-container border border-surface-container hover:border-primary-container transition-all text-left shadow-2xs cursor-pointer active:scale-98 disabled:opacity-50"
+                  >
+                    <span className="inline-flex items-center gap-1 font-label-md text-label-md font-semibold text-on-surface group-hover:text-primary">
+                      ⚡ {profile.name}
+                    </span>
+                    <span className="font-code-sm text-code-sm text-on-surface-variant">
+                      {profile.year} {profile.branch} • {profile.roll}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </main>
+    </div>
+  </main>
   );
 }

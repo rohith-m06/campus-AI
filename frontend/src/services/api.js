@@ -27,10 +27,29 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
   } catch (err) {
     clearTimeout(timer);
     if (err.name === 'AbortError') {
-      throw new Error('Connection timed out. The server may be waking up, please try again.');
+      const timeoutErr = new Error('Connection timed out. The server may be waking up, please try again.');
+      timeoutErr.status = 408;
+      throw timeoutErr;
     }
     throw err;
   }
+}
+
+async function parseResponse(res, defaultErrorMsg = 'Request failed') {
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    const message = (data && data.detail) || res.statusText || defaultErrorMsg;
+    const error = new Error(typeof message === 'string' ? message : JSON.stringify(message));
+    error.status = res.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
 }
 
 export const api = {
@@ -41,11 +60,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Registration failed');
-    }
-    return data;
+    return parseResponse(res, 'Registration failed');
   },
 
   async login(credentials) {
@@ -54,22 +69,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Login failed');
-    }
-    return data;
+    return parseResponse(res, 'Login failed');
   },
 
   async getProfile() {
     const res = await fetchWithTimeout(`${API_BASE}/user/profile`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch profile');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch profile');
   },
 
   // Chat & RAG
@@ -83,22 +90,73 @@ export const api = {
         session_id: sessionId,
       }),
     });
-    const data = await res.json();
+    return parseResponse(res, 'Failed to send message');
+  },
+
+  async sendMessageStream(message, preferredLanguage = null, sessionId = null, onToken = null, onDone = null) {
+    const res = await fetch(`${API_BASE}/chat/stream`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        message,
+        preferred_language: preferredLanguage,
+        session_id: sessionId,
+      }),
+    });
+
     if (!res.ok) {
-      throw new Error(data.detail || 'Failed to send message');
+      let data;
+      try { data = await res.json(); } catch { data = {}; }
+      const err = new Error(data.detail || res.statusText || 'Streaming request failed');
+      err.status = res.status;
+      throw err;
     }
-    return data;
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedText = '';
+    let finalDoneData = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          let event;
+          try {
+            event = JSON.parse(trimmed.slice(6));
+          } catch (pe) {
+            console.debug('SSE parse notice:', pe);
+            continue;
+          }
+
+          if (event.type === 'token') {
+            accumulatedText += event.token;
+            if (onToken) onToken(event.token, accumulatedText);
+          } else if (event.type === 'done') {
+            finalDoneData = event;
+            if (onDone) onDone(event);
+          } else if (event.type === 'error') {
+            throw new Error(event.detail || 'Streaming error');
+          }
+        }
+      }
+    }
+
+    return finalDoneData || { answer: accumulatedText };
   },
 
   async getChatSessions() {
     const res = await fetchWithTimeout(`${API_BASE}/chat/sessions`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch chat sessions');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch chat sessions');
   },
 
   async createChatSession(title = 'New Chat') {
@@ -107,22 +165,14 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ title }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to create chat session');
-    }
-    return data;
+    return parseResponse(res, 'Failed to create chat session');
   },
 
   async getSessionMessages(sessionId) {
     const res = await fetchWithTimeout(`${API_BASE}/chat/sessions/${sessionId}/messages`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch session messages');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch session messages');
   },
 
   async deleteChatSession(sessionId) {
@@ -130,22 +180,14 @@ export const api = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to delete chat session');
-    }
-    return data;
+    return parseResponse(res, 'Failed to delete chat session');
   },
 
   async getChatHistory() {
     const res = await fetchWithTimeout(`${API_BASE}/chat/history`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch chat history');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch chat history');
   },
 
   async clearChatHistory() {
@@ -153,11 +195,7 @@ export const api = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to clear chat history');
-    }
-    return data;
+    return parseResponse(res, 'Failed to clear chat history');
   },
 
   // Tickets & Grievance Actions
@@ -167,22 +205,14 @@ export const api = {
       headers: getAuthHeaders(),
       body: JSON.stringify(ticketData),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to create ticket');
-    }
-    return data;
+    return parseResponse(res, 'Failed to create ticket');
   },
 
   async getMyTickets() {
     const res = await fetchWithTimeout(`${API_BASE}/tickets/my-tickets`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch tickets');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch tickets');
   },
 
   getTickets() {
@@ -194,43 +224,32 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE}/student/attendance`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch attendance');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch attendance');
   },
 
   async getCourses() {
     const res = await fetchWithTimeout(`${API_BASE}/student/courses`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch courses');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch courses');
   },
 
   async getNews() {
     const res = await fetchWithTimeout(`${API_BASE}/student/news`, {
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch news');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch news');
+  },
+
+  async getTimetable() {
+    const res = await fetchWithTimeout(`${API_BASE}/student/timetable`, {
+      headers: getAuthHeaders(),
+    });
+    return parseResponse(res, 'Failed to fetch timetable');
   },
 
   async getFirebaseStatus() {
     const res = await fetchWithTimeout(`${API_BASE}/firebase/status`);
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || 'Failed to fetch Firebase status');
-    }
-    return data;
+    return parseResponse(res, 'Failed to fetch Firebase status');
   },
 };
-
-

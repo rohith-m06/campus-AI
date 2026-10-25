@@ -151,6 +151,7 @@ def save_user_to_firebase(user_dict: Dict[str, Any]) -> bool:
     try:
         user_id = str(user_dict.get("id") or user_dict.get("student_id"))
         doc_ref = db.collection("users").document(user_id)
+        now_iso = datetime.utcnow().isoformat()
         data_to_save = {
             "id": user_dict.get("id"),
             "full_name": user_dict.get("full_name"),
@@ -161,13 +162,99 @@ def save_user_to_firebase(user_dict: Dict[str, Any]) -> bool:
             "batch": user_dict.get("batch"),
             "hostel_status": user_dict.get("hostel_status"),
             "phone_number": user_dict.get("phone_number"),
-            "updated_at": datetime.utcnow().isoformat()
+            "last_login_at": user_dict.get("last_login_at", now_iso),
+            "last_seen_at": user_dict.get("last_seen_at", now_iso),
+            "login_count": user_dict.get("login_count", 1),
+            "updated_at": now_iso
         }
         doc_ref.set(data_to_save, merge=True)
         return True
     except Exception as e:
         logger.error(f"Error saving user to Firebase: {e}")
         return False
+
+def track_user_login(user_id: Any, email: Optional[str] = None) -> bool:
+    """
+    Tracks user login activity in Firebase Firestore:
+    - Sets last_login_at
+    - Sets last_seen_at
+    - Increments login_count
+    Allows reviewing total registered, new, returning, and active users.
+    """
+    db = get_firestore_client()
+    if not db:
+        return False
+    try:
+        user_str_id = str(user_id)
+        doc_ref = db.collection("users").document(user_str_id)
+        now_iso = datetime.utcnow().isoformat()
+
+        # Fetch current record to safely increment login_count
+        doc = doc_ref.get()
+        new_count = 1
+        if doc.exists:
+            current_count = doc.to_dict().get("login_count", 0)
+            new_count = current_count + 1
+
+        update_data = {
+            "last_login_at": now_iso,
+            "last_seen_at": now_iso,
+            "login_count": new_count,
+            "updated_at": now_iso
+        }
+        if email:
+            update_data["email"] = email.lower().strip()
+
+        doc_ref.set(update_data, merge=True)
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking user login in Firebase: {e}")
+        return False
+
+def track_user_activity(user_id: Any) -> bool:
+    """Updates user document with last_seen_at timestamp."""
+    db = get_firestore_client()
+    if not db:
+        return False
+    try:
+        user_str_id = str(user_id)
+        doc_ref = db.collection("users").document(user_str_id)
+        now_iso = datetime.utcnow().isoformat()
+        doc_ref.set({
+            "last_seen_at": now_iso,
+            "updated_at": now_iso
+        }, merge=True)
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking user activity in Firebase: {e}")
+        return False
+
+def classify_intent(query: str) -> str:
+    """
+    Classifies student inquiry into one of the 9 required hackathon intent categories:
+    attendance, exams, fees, hostel, courses, placements, grievance, campus_news, general
+    """
+    if not query:
+        return "general"
+    q = query.lower().strip()
+
+    if any(k in q for k in ["grievance", "complaint", "ticket", "issue", "broken", "wifi", "water", "plumbing", "harassment", "ragging", "resolve", "repair", "not working"]):
+        return "grievance"
+    if any(k in q for k in ["attendance", "bunk", "percentage", "present", "absent", "condonation", "detained", "detention", "margin", "shortage"]):
+        return "attendance"
+    if any(k in q for k in ["exam", "cat-1", "cat-2", "cat 1", "cat 2", "fat", "assessment", "test", "hall ticket", "re-eval", "backlog", "date sheet", "marks", "grades"]):
+        return "exams"
+    if any(k in q for k in ["fee", "tuition", "payment", "installment", "due", "cost", "fine", "receipt", "penalty", "scholarship"]):
+        return "fees"
+    if any(k in q for k in ["hostel", "curfew", "warden", "room", "mess", "gate", "night out", "in-time", "out-time", "visitor", "laundry"]):
+        return "hostel"
+    if any(k in q for k in ["course", "subject", "syllabus", "credit", "elective", "curriculum", "faculty", "professor", "timetable", "routine", "slot", "lab"]):
+        return "courses"
+    if any(k in q for k in ["placement", "internship", "job", "career", "company", "recruit", "package", "ctc", "interview", "drive", "hire"]):
+        return "placements"
+    if any(k in q for k in ["news", "announcement", "circular", "event", "fest", "holiday", "seminar", "workshop", "update", "hackathon"]):
+        return "campus_news"
+    return "general"
 
 def get_user_by_email_from_firebase(email: str) -> Optional[Dict[str, Any]]:
     """Fetches user document from Firestore by email."""
@@ -282,7 +369,13 @@ def save_chat_session_to_firebase(session_dict: Dict[str, Any]) -> bool:
         return False
 
 def save_chat_message_to_firebase(session_id: str, message_dict: Dict[str, Any]) -> bool:
-    """Saves a message inside `chat_sessions/{session_id}/messages/{msg_id}`."""
+    """
+    Saves a message inside `chat_sessions/{session_id}/messages/{msg_id}`
+    and logs it in `chat_analytics/{session_id}_{msg_id}` for aggregated analytics.
+    Preserves all required fields:
+    user_id, session_id, role, content, source, branch, current_year, batch, created_at,
+    response_time_ms, model_used, retrieved_document_count, intent.
+    """
     db = get_firestore_client()
     if not db:
         return False
@@ -301,6 +394,14 @@ def save_chat_message_to_firebase(session_id: str, message_dict: Dict[str, Any])
             "updated_at": datetime.utcnow().isoformat(),
             "last_message": message_dict.get("content", "")[:80]
         }, merge=True)
+
+        # Store in flat chat_analytics collection for quick review by hackathon evaluators
+        try:
+            analytics_ref = db.collection("chat_analytics").document(f"{session_id}_{msg_id}")
+            analytics_ref.set(message_dict, merge=True)
+        except Exception as ae:
+            logger.debug(f"Analytics logging notice: {ae}")
+
         return True
     except Exception as e:
         logger.error(f"Error saving chat message to Firebase: {e}")

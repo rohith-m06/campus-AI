@@ -338,6 +338,8 @@ def generate_daywise_attendance_log(subjects: List[Dict[str, Any]], student_id: 
                 "title": sub["title"],
                 "status": status
             })
+    return log_entries
+
 def get_student_courses(branch: str, current_year: str) -> List[Dict[str, Any]]:
     """Returns the official list of registered courses for student's branch and year."""
     clean_branch = branch.upper().strip() if branch else "CSE"
@@ -363,7 +365,13 @@ def build_or_load_student_persona(
     # 1. Try fetching from Firebase first if configured
     if is_firebase_configured():
         cached = get_persona_from_firebase(student_id)
-        if cached and "courses" in cached and "attendance" in cached:
+        if (
+            cached
+            and "courses" in cached
+            and "attendance" in cached
+            and cached.get("current_year") == normalize_year_code(current_year)
+            and cached.get("batch") == user_dict.get("batch")
+        ):
             return cached
 
     # 2. Build structured persona data
@@ -467,3 +475,224 @@ def get_campus_news_summary() -> List[Dict[str, Any]]:
             "doc_ref": "academic_policies_and_attendance.md"
         }
     ]
+
+
+def get_student_timetable_data(
+    branch: Optional[str] = "CSE",
+    current_year: Optional[str] = "3rd",
+    user_batch: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Loads and returns official weekly timetable schedule as structured JSON for the specified student.
+    Parses the authentic Markdown timetable from /knowledge_base with a graceful fallback.
+    """
+    from pathlib import Path
+    import json
+
+    # 1. Normalize branch & year codes
+    clean_branch = "CSE"
+    b_upper = str(branch or "CSE").upper().strip()
+    for code in ["CSE", "ECE", "MECH", "EEE", "CIVIL", "IT"]:
+        if code in b_upper:
+            clean_branch = code
+            break
+
+    clean_year = normalize_year_code(current_year)
+    year_key_map = {"1st": "1styr", "2nd": "2ndyr", "3rd": "3rdyr", "4th": "4thyr"}
+    year_key = year_key_map.get(clean_year, "3rdyr")
+
+    semester_map = {"1st": "1", "2nd": "3", "3rd": "5", "4th": "7"}
+    semester = semester_map.get(clean_year, "1")
+    batch = user_batch or "2023-2027"
+
+    base_dir = Path(__file__).resolve().parent.parent
+    kb_dir = base_dir / "knowledge_base"
+    target_filename = f"timetable_{clean_branch}_{year_key}_2026.md"
+    target_file = kb_dir / target_filename
+
+    if not target_file.exists():
+        matches = list(kb_dir.glob(f"timetable_{clean_branch}_{year_key}_*.md"))
+        if matches:
+            target_file = matches[0]
+            target_filename = target_file.name
+
+    day_keys = ["MON", "TUE", "WED", "THU", "FRI"]
+    days_dict: Dict[str, List[Dict[str, Any]]] = {d: [] for d in day_keys}
+
+    # 2. Parse markdown timetable if present
+    if target_file.exists():
+        try:
+            content = target_file.read_text(encoding="utf-8")
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    try:
+                        fm = json.loads(parts[1].strip())
+                        if isinstance(fm, dict):
+                            if "batch" in fm:
+                                batch = str(fm["batch"])
+                            if "semester" in fm:
+                                semester = str(fm["semester"])
+                    except Exception:
+                        pass
+
+            day_name_map = {
+                "monday": "MON", "tuesday": "TUE", "wednesday": "WED", "thursday": "THU", "friday": "FRI",
+                "mon": "MON", "tue": "TUE", "wed": "WED", "thu": "THU", "fri": "FRI"
+            }
+
+            for line in content.splitlines():
+                line_str = line.strip()
+                if not line_str.startswith("|") or line_str.startswith("|---") or "Course Code" in line_str:
+                    continue
+                cols = [c.strip() for c in line_str.split("|")[1:-1]]
+                if len(cols) < 6:
+                    continue
+
+                day_raw, time_raw, code_raw, title_raw, room_raw, fac_raw = cols[:6]
+                norm_day = day_name_map.get(day_raw.lower(), "MON")
+
+                clean_code = code_raw.replace("*", "").strip()
+                clean_title = title_raw.replace("*", "").strip()
+                clean_room = room_raw.strip() if room_raw else "Academic Block"
+                clean_faculty = fac_raw.strip() if fac_raw else "Course Faculty"
+
+                is_lab = (
+                    "(lab)" in time_raw.lower() or
+                    "lab" in clean_code.lower() or
+                    "lab" in clean_title.lower() or
+                    any(clean_code.upper().startswith(p) for p in ["CSL", "ECL", "MEL", "EEL", "CVL", "ITL", "CHL", "PHL", "MED", "EED"])
+                )
+                session_type = "lab" if is_lab else "theory"
+
+                clean_time = time_raw.replace("(Lab)", "").replace("(lab)", "").strip()
+                start_time = ""
+                end_time = ""
+                if "-" in clean_time:
+                    t_parts = [t.strip() for t in clean_time.split("-", 1)]
+                    start_time = t_parts[0]
+                    end_time = t_parts[1]
+                else:
+                    start_time = clean_time
+                    end_time = ""
+
+                if clean_code.upper().startswith("PRJ"):
+                    category = "Capstone Project"
+                    credits_val = 6.0
+                elif session_type == "lab":
+                    category = "Practical / Lab"
+                    credits_val = 2.0
+                elif any(clean_code.upper().startswith(p) for p in ["PHY", "MTH", "ENG", "CHM"]):
+                    category = "Basic Science / Humanity Core"
+                    credits_val = 3.0
+                else:
+                    category = "Program Core"
+                    credits_val = 3.0
+
+                # Deterministic slot code & slot ID for autoscheduler timetable matrix
+                slot_id = 1
+                slot_code = "A1"
+                if "09:00" in start_time or "08:30" in start_time:
+                    slot_id = 1
+                    slot_code = "A1" if session_type == "theory" else "L1+L2"
+                elif "10:00" in start_time or "09:45" in start_time:
+                    slot_id = 2
+                    slot_code = "F1" if session_type == "theory" else "L3+L4"
+                elif "11:15" in start_time or "11:30" in start_time:
+                    slot_id = 3
+                    slot_code = "D1" if session_type == "theory" else "L5+L6"
+                elif "12:15" in start_time or "12:30" in start_time:
+                    slot_id = 4
+                    slot_code = "TC1" if session_type == "theory" else "L7+L8"
+                elif "01:15" in start_time or "02:00" in start_time or "01:00" in start_time:
+                    slot_id = 5
+                    slot_code = "A2" if session_type == "theory" else "L29+L30"
+                elif "02:15" in start_time or "03:00" in start_time:
+                    slot_id = 6
+                    slot_code = "F2" if session_type == "theory" else "L31+L32"
+                elif "03:15" in start_time or "04:00" in start_time:
+                    slot_id = 7
+                    slot_code = "D2" if session_type == "theory" else "L33+L34"
+                else:
+                    slot_id = len(days_dict[norm_day]) + 1
+                    slot_code = f"S{slot_id}"
+
+                session_item = {
+                    "courseCode": clean_code,
+                    "courseTitle": clean_title,
+                    "category": category,
+                    "type": session_type,
+                    "day": norm_day,
+                    "startTime": start_time,
+                    "endTime": end_time,
+                    "time": clean_time,
+                    "slot": slot_code,
+                    "slotId": slot_id,
+                    "faculty": clean_faculty,
+                    "room": clean_room,
+                    "credits": credits_val
+                }
+                days_dict[norm_day].append(session_item)
+        except Exception as e:
+            print(f"[Timetable] Markdown parsing error for {target_filename}: {e}")
+
+    # 3. Controlled fallback if markdown table is empty or missing
+    if not any(days_dict.values()):
+        subjects = ALL_BRANCH_SUBJECTS.get(clean_branch, {}).get(clean_year) or ALL_BRANCH_SUBJECTS.get("CSE", {}).get("3rd", [])
+        default_times = [
+            ("09:00 AM", "10:00 AM", "09:00 AM - 10:00 AM", 1, "A1"),
+            ("10:00 AM", "11:00 AM", "10:00 AM - 11:00 AM", 2, "F1"),
+            ("11:15 AM", "12:15 PM", "11:15 AM - 12:15 PM", 3, "D1"),
+            ("01:15 PM", "04:15 PM", "01:15 PM - 04:15 PM (Lab)", 5, "L29+L30")
+        ]
+        for day_idx, d_key in enumerate(day_keys):
+            for i in range(4):
+                if not subjects:
+                    continue
+                subj = subjects[(day_idx + i) % len(subjects)]
+                st, et, t_str, sid, scode = default_times[i]
+                is_lab = i == 3 or "lab" in subj.get("title", "").lower() or subj.get("code", "").startswith("CSL")
+                stype = "lab" if is_lab else "theory"
+                days_dict[d_key].append({
+                    "courseCode": subj.get("code", f"SUB{sid}"),
+                    "courseTitle": subj.get("title", "Core Academic Subject"),
+                    "category": "Practical / Lab" if is_lab else "Program Core",
+                    "type": stype,
+                    "day": d_key,
+                    "startTime": st,
+                    "endTime": et,
+                    "time": t_str,
+                    "slot": scode,
+                    "slotId": sid,
+                    "faculty": subj.get("faculty", "Course Faculty"),
+                    "room": subj.get("room", "Academic Block"),
+                    "credits": 2.0 if is_lab else 3.0
+                })
+
+    # 4. Compile distinct courses summary
+    seen_courses: Dict[str, Dict[str, Any]] = {}
+    for d_key, s_list in days_dict.items():
+        for s in s_list:
+            c_code = s["courseCode"]
+            if c_code not in seen_courses:
+                seen_courses[c_code] = {
+                    "courseCode": c_code,
+                    "courseTitle": s["courseTitle"],
+                    "category": s["category"],
+                    "type": s["type"],
+                    "faculty": s["faculty"],
+                    "room": s["room"],
+                    "credits": s["credits"]
+                }
+    summary_list = list(seen_courses.values())
+
+    return {
+        "branch": clean_branch,
+        "year": clean_year,
+        "semester": semester,
+        "batch": batch,
+        "source": target_filename,
+        "days": days_dict,
+        "summary": summary_list
+    }
+

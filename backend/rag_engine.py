@@ -2,19 +2,21 @@
 Unified Smart RAG Engine for CampusMind AI.
 Architecture:
 - 100% LLM-First: Every user query is directly analyzed and processed by Google Gemini.
-- Zero Hardcoded Dictionaries: Gemini dynamically reasons about intent (casual small talk vs. academic inquiry).
-- Silent Personalization: Injects student profile (name, branch, year, batch, residence) without robotic recitation.
-- Targeted Vector Search: Retrieves official university records matching the student's branch and year.
-- Factual Grounding: Uses official records with document citations when academic details are requested.
-- Free-form Intelligence: Answers general knowledge, advice, and conversation using Gemini's native brain.
-- Resilient Multi-Tier Model Fallback: Gemini 3.8 Flash -> 3.7 Flash -> 3.6 Flash -> 3.5 Flash Lite -> 3.1 Flash Lite -> 2.5 Flash.
-- Multilingual Support: Native multi-language comprehension (Hindi, Telugu, Tamil, French, Spanish, etc.).
+- Fast Intent-Targeted Context: Selectively injects relevant context (attendance, tickets, exams, etc.)
+  drastically reducing token footprint and generation latency (Section 4.3).
+- Strict Batch-Aware Chroma Retrieval: Filters by branch, year, and batch with strict fallbacks
+  (branch+year+batch -> branch+year -> campus-wide -> empty) without wrong-branch leaks (Section 4.4 & 4.5).
+- ChromaDB Warmup & In-Memory LRU Caching: Pre-warms embeddings and collection at startup (Section 4.6).
+- Progressive Response Streaming: Supports token-by-token streaming via SSE (Section 4.7).
+- Resilient Multi-Tier Model Fallback: Gemini 2.5 Flash -> 3.5 Flash Lite -> 3.1 Flash Lite.
 """
 
 import os
 import re
+import time
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, AsyncGenerator, Optional
+from datetime import datetime
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +30,8 @@ if os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
 import chromadb
 from chromadb.utils import embedding_functions
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
+from backend.firebase_service import classify_intent
 
 CHROMA_DIR = BASE_DIR / "backend" / "chroma_db"
 COLLECTION_NAME = "campusmind_knowledge"
@@ -41,7 +44,7 @@ MODEL_HIERARCHY = [
     "gemini-3.1-flash-lite",
 ]
 
-_retrieval_cache = {}  # In-memory LRU cache for repeat queries
+_retrieval_cache = {}  # In-memory LRU cache for repeat queries: (query, branch, year, batch)
 
 # Singleton references
 _chroma_client = None
@@ -64,6 +67,20 @@ def get_chroma_collection():
         )
     return _collection
 
+def warm_up_chromadb() -> bool:
+    """
+    Initializes embeddings once and runs a test query against Chroma collection (Section 4.6).
+    Eliminates cold-start latency when users send their first chat query.
+    """
+    try:
+        col = get_chroma_collection()
+        col.query(query_texts=["academic policies and attendance criteria"], n_results=1)
+        print("[Startup] ChromaDB warmed up and cached successfully.")
+        return True
+    except Exception as e:
+        print(f"[Startup] ChromaDB warm-up notice: {e}")
+        return False
+
 def extract_content_text(content: Any) -> str:
     """Safely extracts clean string text from str, dict, or list of content blocks."""
     if isinstance(content, str):
@@ -83,7 +100,7 @@ def extract_content_text(content: Any) -> str:
     return str(content)
 
 # -------------------------------------------------------------
-# VECTOR SEARCH & RETRIEVAL
+# VECTOR SEARCH & RETRIEVAL (STRICT BATCH & BRANCH AWARE)
 # -------------------------------------------------------------
 
 def normalize_year_code(year_str: Any) -> str:
@@ -115,63 +132,97 @@ def query_vector_store(
     query: str,
     user_branch: str,
     user_year: str,
-    top_k: int = 5
+    user_batch: str = "all",
+    top_k: int = 4
 ) -> Tuple[List[str], List[Dict[str, Any]]]:
     """
     Performs dynamic metadata filtered search in ChromaDB.
-    Retrieves the targeted chunks matching user's branch and year (or campus-wide docs).
-    Includes in-memory caching to make repeated inquiries instant (<0.01s).
+    Strict sequence (Section 4.4 & 4.5):
+    1. branch + year + batch
+    2. branch + year
+    3. campus-wide documents (strictly branch == 'all' and year == 'all')
+    4. no matching result (empty)
+    NEVER falls back to unrestricted search across other branches!
+    Cache key: query + branch + year + batch.
     """
     clean_branch = normalize_branch_code(user_branch)
     clean_year = normalize_year_code(user_year)
+    clean_batch = (str(user_batch) if user_batch else "all").strip()
 
-    cache_key = (query.strip().lower(), clean_branch, clean_year)
+    cache_key = (query.strip().lower(), clean_branch, clean_year, clean_batch)
     if cache_key in _retrieval_cache:
         return _retrieval_cache[cache_key]
 
     collection = get_chroma_collection()
-    
-    where_filter = {
-        "$and": [
-            {"$or": [{"branch": clean_branch}, {"applicable_to": "all"}]},
-            {"$or": [{"year": clean_year}, {"year": "all"}]}
-        ]
-    }
-    
     enhanced_query = f"{query} {clean_branch} {clean_year} Year"
-    
-    results = None
-    try:
-        results = collection.query(
-            query_texts=[enhanced_query],
-            n_results=top_k,
-            where=where_filter
-        )
-    except Exception as e:
-        print(f"[RAG] Filtered query notice: {e}, falling back to branch-only or unrestricted search")
-        try:
-            results = collection.query(
-                query_texts=[enhanced_query],
-                n_results=top_k,
-                where={"$or": [{"branch": user_branch.upper()}, {"applicable_to": "all"}]}
-            )
-        except Exception:
-            pass
+    if clean_batch != "all":
+        enhanced_query += f" {clean_batch}"
 
     documents = []
     metadatas = []
-    
-    if results and results.get("documents") and len(results["documents"][0]) > 0:
-        documents = results["documents"][0]
-        metadatas = results["metadatas"][0]
-    else:
-        fallback_results = collection.query(
-            query_texts=[enhanced_query],
-            n_results=top_k
-        )
-        if fallback_results.get("documents") and len(fallback_results["documents"][0]) > 0:
-            documents = fallback_results["documents"][0]
-            metadatas = fallback_results["metadatas"][0]
+
+    # Sequence 1: branch + year + batch
+    if clean_batch != "all":
+        where_filter_1 = {
+            "$and": [
+                {"$or": [{"branch": clean_branch}, {"applicable_to": "all"}]},
+                {"$or": [{"year": clean_year}, {"year": "all"}]},
+                {"$or": [{"batch": clean_batch}, {"batch": "all"}]}
+            ]
+        }
+        try:
+            r1 = collection.query(
+                query_texts=[enhanced_query],
+                n_results=top_k,
+                where=where_filter_1
+            )
+            if r1 and r1.get("documents") and len(r1["documents"][0]) > 0:
+                documents = r1["documents"][0]
+                metadatas = r1["metadatas"][0]
+        except Exception as e:
+            print(f"[RAG] Batch-filtered query notice: {e}")
+
+    # Sequence 2: branch + year (if not matched yet)
+    if not documents:
+        where_filter_2 = {
+            "$and": [
+                {"$or": [{"branch": clean_branch}, {"applicable_to": "all"}]},
+                {"$or": [{"year": clean_year}, {"year": "all"}]}
+            ]
+        }
+        try:
+            r2 = collection.query(
+                query_texts=[enhanced_query],
+                n_results=top_k,
+                where=where_filter_2
+            )
+            if r2 and r2.get("documents") and len(r2["documents"][0]) > 0:
+                documents = r2["documents"][0]
+                metadatas = r2["metadatas"][0]
+        except Exception as e:
+            print(f"[RAG] Branch+Year query notice: {e}")
+
+    # Sequence 3: campus-wide documents strictly (branch == 'all' and year == 'all')
+    if not documents:
+        where_filter_3 = {
+            "$and": [
+                {"branch": "all"},
+                {"year": "all"}
+            ]
+        }
+        try:
+            r3 = collection.query(
+                query_texts=[enhanced_query],
+                n_results=top_k,
+                where=where_filter_3
+            )
+            if r3 and r3.get("documents") and len(r3["documents"][0]) > 0:
+                documents = r3["documents"][0]
+                metadatas = r3["metadatas"][0]
+        except Exception as e:
+            print(f"[RAG] Campus-wide query notice: {e}")
+
+    # Sequence 4: If still no matching documents, return empty (NEVER perform unrestricted search)
 
     # Save to cache (limit size to 250 items)
     if len(_retrieval_cache) > 250:
@@ -180,7 +231,7 @@ def query_vector_store(
 
     return documents, metadatas
 
-async def invoke_llm_with_fallback(prompt: ChatPromptTemplate, question: str) -> str:
+async def invoke_llm_with_fallback(messages: List[Any]) -> Tuple[str, str]:
     """Invokes primary model with fast seamless fallback across Gemini Flash family."""
     last_err = None
     for model_name in MODEL_HIERARCHY:
@@ -191,11 +242,10 @@ async def invoke_llm_with_fallback(prompt: ChatPromptTemplate, question: str) ->
                 max_output_tokens=1024,
                 max_retries=1
             )
-            chain = prompt | llm
-            response = await chain.ainvoke({"question": question})
+            response = await llm.ainvoke(messages)
             text = extract_content_text(response.content)
             if text and len(text.strip()) > 0:
-                return text
+                return text, model_name
         except Exception as e:
             err_msg = str(e)
             print(f"[RAG Engine] Switching from '{model_name}' due to: {err_msg[:100]}")
@@ -204,23 +254,22 @@ async def invoke_llm_with_fallback(prompt: ChatPromptTemplate, question: str) ->
 
     if last_err:
         raise last_err
-    return "I couldn't generate a response. Please try asking again."
+    return "I couldn't generate a response. Please try asking again.", MODEL_HIERARCHY[0]
 
 # -------------------------------------------------------------
-# MAIN INTELLIGENT AI ENTRYPOINT (100% GEMINI-POWERED)
+# TARGETED PROMPT BUILDER & CITATION PARSER (SECTION 4.3)
 # -------------------------------------------------------------
 
-async def generate_rag_response(
+def build_targeted_prompt(
     query: str,
     user_profile: Dict[str, Any],
-    preferred_language: str = None
-) -> Dict[str, Any]:
+    preferred_language: Optional[str],
+    docs: List[str],
+    metadatas: List[Dict[str, Any]]
+) -> Tuple[List[Any], str, str, set]:
     """
-    Intelligent AI Pipeline:
-    Every query is analyzed and answered by Google Gemini.
-    Gemini autonomously determines:
-    1. Casual Conversation / Small Talk / Advice / Unrelated Questions -> Responds conversationally with its own brain (No citations).
-    2. Campus & Academic Queries -> Grounds answers in the retrieved official documents with citations.
+    Constructs an intent-targeted system prompt with minimized token footprint (Section 4.3).
+    Only sends student context relevant to the inquiry rather than injecting broad profiles.
     """
     user_name = user_profile.get("full_name", "Student")
     first_name = user_name.split()[0] if user_name else "there"
@@ -230,295 +279,430 @@ async def generate_rag_response(
     hostel_status = user_profile.get("hostel_status", "Day Scholar")
     student_id = user_profile.get("student_id", "")
 
-    # Retrieve relevant institutional records from ChromaDB (fast local HNSW search)
-    # top_k=4 provides exact targeted context while reducing LLM token generation latency
-    docs, metadatas = query_vector_store(
-        query=query,
-        user_branch=user_branch,
-        user_year=user_year,
-        top_k=4
-    )
+    detected_intent = classify_intent(query)
 
-    formatted_context_list = []
+    # Build targeted contextual blocks
+    context_blocks = []
     sources_set = set()
+
+    # Dynamic Real-Time Academic Temporal Context
+    now = datetime.now()
+    current_date_str = now.strftime("%A, %B %d, %Y")
+    current_time_str = now.strftime("%I:%M %p")
+    current_day = now.strftime("%A")
+
+    context_blocks.append(f"""Current Academic Date & Time Context:
+- Current Date: {current_date_str}
+- Current Day of the Week: {current_day}
+- Current Local Time: {current_time_str}
+- Academic Session: Autumn / Fall Semester (AY 2026-2027)""")
+
+    # 1. Profile block - tailored based on intent
+    if detected_intent in ["attendance", "exams", "fees", "courses"]:
+        context_blocks.append(f"""Student Academic Profile:
+- Student Name: {user_name}
+- Department: {user_branch}
+- Academic Year: {user_year} Year
+- Batch: {user_batch}""")
+    elif detected_intent in ["hostel", "grievance"]:
+        context_blocks.append(f"""Student Campus Profile:
+- Student Name: {user_name}
+- Student ID: {student_id}
+- Residential Status: {hostel_status}""")
+    else:
+        context_blocks.append(f"Student: {user_name}")
+
+    # 2. Live data blocks - ONLY inject what's relevant to intent
+    if detected_intent == "attendance":
+        attendance_data = user_profile.get("attendance_summary", {})
+        sub_records = attendance_data.get("subject_records", [])
+        overall_pct = attendance_data.get("overall_percentage", 83.2)
+        overall_att = attendance_data.get("overall_attended", 119)
+        overall_tot = attendance_data.get("overall_conducted", 143)
+        att_lines = [
+            f"Overall Attendance: {overall_pct}% ({overall_att}/{overall_tot} classes attended)",
+            "Mandatory Criteria: 75.0% for end-semester exams | Condonation: 65.0%-74.9% (medical grounds)",
+            "Subject-wise Records:"
+        ]
+        for sub in sub_records:
+            att_lines.append(f"- [{sub['code']}] {sub['title']}: {sub['attended']}/{sub['total_conducted']} ({sub['percentage']}%) | {sub['status']}")
+        context_blocks.append("Live Attendance Records:\n" + "\n".join(att_lines))
+
+    elif detected_intent == "grievance":
+        user_tickets = user_profile.get("tickets", [])
+        if user_tickets:
+            ticket_lines = []
+            for t in user_tickets:
+                ticket_lines.append(
+                    f"- Ticket ID: {t.get('ticket_number')} | Category: {t.get('category')} | Title: '{t.get('title')}' | "
+                    f"Status: {t.get('status')} | Priority: {t.get('priority')} | Location: {t.get('location')} | "
+                    f"SLA: {t.get('estimated_sla')} | Offline Desk: {t.get('offline_resolution_desk')}"
+                )
+            context_blocks.append("Active Student Grievance Tickets:\n" + "\n".join(ticket_lines))
+        else:
+            context_blocks.append("Active Student Grievance Tickets: No tickets currently filed.")
+
+    elif detected_intent == "campus_news":
+        campus_news = user_profile.get("campus_news", [])
+        if campus_news:
+            news_lines = [f"- [{n.get('category')}] {n.get('title')} ({n.get('date')}): {n.get('summary')}" for n in campus_news]
+            context_blocks.append("Official Campus Circulars & Announcements:\n" + "\n".join(news_lines))
+
+    elif detected_intent == "courses":
+        courses_list = user_profile.get("courses", [])
+        if courses_list:
+            c_lines = [f"- [{c.get('code')}] {c.get('title')} (Faculty: {c.get('faculty')}, Room: {c.get('room')})" for c in courses_list]
+            context_blocks.append(f"Registered Courses for {user_branch} {user_year} Year:\n" + "\n".join(c_lines))
+
+    # 3. Direct Grounding Injections for Exams & Timetable if applicable
+    q_lower = query.lower()
     kb_dir = BASE_DIR / "knowledge_base"
-    
+
+    if detected_intent == "exams" or any(k in q_lower for k in ["exam", "exams", "cat", "fat", "assessment", "test", "when are my"]):
+        matching_exams = list(kb_dir.glob(f"exam_schedule_{user_branch}_{user_year}yr_*.md"))
+        if matching_exams:
+            try:
+                exam_text = matching_exams[0].read_text(encoding="utf-8")
+                context_blocks.append(f"Official Examination Roadmap & Schedule ({matching_exams[0].name}):\n{exam_text}")
+                sources_set.add(matching_exams[0].name)
+            except Exception as e:
+                print(f"[RAG] Direct exam schedule load notice: {e}")
+
+    if any(k in q_lower for k in ["timetable", "schedule", "today", "tomorrow", "yesterday", "class", "classes", "routine", "period", "slot"]):
+        matching_tts = list(kb_dir.glob(f"timetable_{user_branch}_{user_year}yr_*.md"))
+        if matching_tts:
+            try:
+                tt_text = matching_tts[0].read_text(encoding="utf-8")
+                context_blocks.append(f"Official Weekly Class Timetable ({matching_tts[0].name}):\n{tt_text}")
+                sources_set.add(matching_tts[0].name)
+            except Exception as e:
+                print(f"[RAG] Direct timetable load notice: {e}")
+
+    # 4. Official Vector Search Documents Context
+    formatted_docs = []
     for doc_text, meta in zip(docs, metadatas):
         doc_filename = meta.get("source", "")
         doc_title = meta.get("title", doc_filename)
         if doc_filename:
             sources_set.add(doc_filename)
-        formatted_context_list.append(f"--- Document File: {doc_filename} (Title: {doc_title}) ---\n{doc_text}")
+        formatted_docs.append(f"--- Document: {doc_filename} ({doc_title}) ---\n{doc_text}")
 
-    context_str = "\n\n".join(formatted_context_list) if formatted_context_list else "No official records found."
-    fallback_source = list(sources_set)[0] if sources_set else "academic_policies_and_attendance.md"
-
-    # Format Attendance Context
-    attendance_data = user_profile.get("attendance_summary", {})
-    sub_records = attendance_data.get("subject_records", [])
-    overall_pct = attendance_data.get("overall_percentage", 83.2)
-    overall_att = attendance_data.get("overall_attended", 119)
-    overall_tot = attendance_data.get("overall_conducted", 143)
-
-    attendance_lines = [
-        f"Overall Attendance: {overall_pct}% ({overall_att}/{overall_tot} classes attended)",
-        "Minimum Required Attendance: 75.0% (Mandatory for end-semester exams)",
-        "Condonation Bracket: 65.0% - 74.9% (Requires approved medical certificate & condonation fee)",
-        "Critical Detention: Below 65.0% (No exam eligibility)",
-        "\nSubject-wise Records:"
-    ]
-    for sub in sub_records:
-        attendance_lines.append(
-            f"- [{sub['code']}] {sub['title']}: {sub['attended']}/{sub['total_conducted']} attended ({sub['percentage']}%) | "
-            f"Status: {sub['status']} | {sub['margin_summary']} | Faculty: {sub['faculty']}"
-        )
-    attendance_context_str = "\n".join(attendance_lines) if sub_records else "Standard attendance records: Overall 83.2%."
-
-    # Format Grievance Tickets Context
-    user_tickets = user_profile.get("tickets", [])
-    ticket_lines = []
-    if user_tickets:
-        for t in user_tickets:
-            ticket_lines.append(
-                f"- Ticket ID: {t.get('ticket_number')} | Category: {t.get('category')} | Title: '{t.get('title')}' | "
-                f"Status: {t.get('status')} | Priority: {t.get('priority')} | Location: {t.get('location')} | "
-                f"SLA: {t.get('estimated_sla')} | Offline Desk: {t.get('offline_resolution_desk')}"
-            )
-        tickets_context_str = "\n".join(ticket_lines)
-    else:
-        tickets_context_str = "No complaints or grievance tickets currently filed by this student."
-
-    # Format Campus News Context
-    campus_news = user_profile.get("campus_news", [])
-    news_lines = []
-    if campus_news:
-        for n in campus_news:
-            news_lines.append(
-                f"- [{n.get('category')}] {n.get('title')} ({n.get('date')}): {n.get('summary')}"
-            )
-        news_context_str = "\n".join(news_lines)
-    else:
-        news_context_str = "Standard campus circulars available."
+    if formatted_docs:
+        context_blocks.append("Official Institutional Documents:\n" + "\n\n".join(formatted_docs))
 
     # Multilingual instruction
-    lang_instruction = ""
     if preferred_language and preferred_language.lower() != "auto":
         lang_instruction = f"IMPORTANT: Respond fluently and naturally in {preferred_language}."
     else:
-        lang_instruction = "If the user asks in Hindi, Telugu, Tamil, Spanish, French, or another language, reply fluently in that same language. Otherwise, reply in clear, friendly English."
+        lang_instruction = "If the user asks in Hindi, Telugu, Tamil, Spanish, French, or another language, reply fluently in that language. Otherwise, reply in clear English."
 
-    # Unified System Prompt: Gemini reasons about intent and formulates response
-    system_prompt = f"""You are CampusMind AI, an exclusive, hyper-personalized university assistant and academic copilot for college students.
+    targeted_context_str = "\n\n".join(context_blocks)
 
-CONVERSATION & GREETING RULES (CRITICAL):
-- DO NOT start every response with "Hi {first_name}!", "Hello {first_name}!", or repetitive greetings.
-- ONLY greet the student with "Hi/Hello {first_name}" if the user's prompt is an explicit greeting (like "hi", "hello", "hey", "good morning").
-- For all other questions (such as asking about attendance, timetable, exams, fees, grievances, rules, syllabus, placements): DO NOT include any greeting prefix. Jump straight into the direct, structured, and helpful answer.
+    system_prompt = f"""You are CampusMind AI, an intelligent, objective, and supportive university academic copilot.
+You serve as a neutral, balanced, and constructive bridge between students and campus administration.
 
-STRICT DOMAIN BOUNDARY & EXCLUSIVE CAMPUS PURPOSE (CRITICAL):
-You are STRICTLY AND EXCLUSIVELY an institutional university assistant. You must ONLY assist with topics and tasks related to the campus, college academics, student life, administration, and university procedures.
+CORE BEHAVIOR & TONE:
+1. Balanced, Professional & Neutral Tone:
+   - Maintain a composed, polite, and objective stance across all conversations.
+   - Strictly avoid exaggerated, dramatic, or accusatory phrases like "completely unacceptable", "truly horrified", "horrifying", "disgraceful", or "your dignity is under attack".
+   - Acknowledge student concerns politely and constructively without taking biased sides against the college or dismissing the student.
+   - Example balanced acknowledgment:
+     "I understand your concern and am sorry to hear about your experience with the mess food. The institution takes hygiene and student feedback seriously, and this will be reviewed by the administration."
+2. Direct Action, Not Redirection:
+   - NEVER tell students to navigate to external ERP websites or search multiple pages. Solve their query directly within this conversation.
+   - NEVER say you don't have access to student records, attendance, courses, or any academic data.
+   - You HAVE full access to the student's personalized academic records including attendance, courses, timetable, exam schedules, and tickets. The data is provided to you in the context blocks below. USE IT DIRECTLY to answer the student's question.
+   - If attendance data, course data, or any other academic data is provided below, ALWAYS present it directly to the student with exact numbers. Do NOT redirect them to any portal or claim you lack access.
+3. In-Chat Grievance Filing:
+   - When a student wants to report an issue or lodge a complaint, provide the in-chat submission form by appending this tag at the very end of your response:
+     [ACTION:SHOW_COMPLAINT_FORM:Category|Title|Description]
+     * Category must be one of: "Hostel Maintenance", "Academic Grievance", "Fee & Financial", "IT & Campus Wi-Fi".
+   - Accurately describe the form's state in your message:
+     * If the student described specific details (e.g., finding insects, food cold, water leakage), summarize those details in Title and Description, and state:
+       "I have drafted the form below with the details you provided. Please review it, make any necessary adjustments, and submit it so the concerned department is notified."
+     * If the student only asked to file a complaint without explaining the details, leave Title appropriate and Description blank, and state:
+       "Please fill out the form below with the relevant details and submit it directly to notify the concerned department."
+   - For urgent situations requiring immediate physical intervention, calmly add:
+     "If this requires immediate attention, you can also contact the Mess Supervisor or Assistant Warden directly in person."
+4. Attendance & Academic Guidance:
+   - Provide clear, factual, and positive academic guidance grounded in university criteria. Strictly avoid using the words "bunk" or "safe bunks".
+   - When the student asks about their attendance, present the EXACT attendance data provided below for each subject with attended/total, percentage, and status. This IS their real personalized data.
+5. Temporal Awareness, Date Reasoning & Schedule Guidance:
+   - You know the exact current date and day: Today is {current_date_str} ({current_day}), local time {current_time_str}.
+   - When a student asks "when are my exams?", "upcoming exams", or about exam schedules:
+     * Compare the dates in the exam roadmap against today ({current_date_str}).
+     * Focus primarily on UPCOMING / FUTURE exams (e.g., CAT-2, Practical Lab Exams, and Semester End FAT Finals).
+     * Mention past completed exams with clear context (e.g., "Note: CAT-1 was completed from October 10 to October 15, 2026; your next upcoming exam is CAT-2 starting November 20, 2026").
+     * If asked in the past tense ("when was my exam", "when did CAT-1 happen"), detail the completed exam dates.
+   - When a student asks about daily classes ("what classes do I have today?", "tomorrow's schedule", "yesterday's classes"):
+     * Calculate the target day relative to today ({current_day}).
+     * If the target day is Saturday or Sunday, inform the student that it is the weekend ({current_day}) with no regular lectures, and provide the upcoming Monday schedule for convenience.
+     * For weekdays (Monday through Friday), provide the exact course codes, titles, time slots, room allocations, and faculty names from the weekly timetable.
+6. Document Citations:
+   - Conclude with '🏷️ Source: [filename.md]' ONLY when answering factual inquiries based directly on university policy documents, timetables, syllabi, or circulars.
+   - Do NOT attach any Source tag to casual greetings, personal student complaints, or general conversations.
 
-ALLOWED IN-SCOPE TOPICS:
-1. Academic timelines & Schedules: Exam schedules (CAT-1, CAT-2, FAT finals, practical lab exams), subject timetables, curricula, courses, credits, and syllabus.
-2. Attendance & Exam Eligibility Tracking: Current percentage per subject, mandatory 75% threshold verification, classes needed to reach 75% if below, condonation rules (65%-74%), and overall attendance status.
-3. Financial matters: Tuition fees, lab consumables, admission deposits, payment installments, late fee deadlines.
-4. Residential & campus life: Hostel block rules, gate curfew timings (10:00 PM / 10:30 PM), mess operational hours (breakfast, lunch, snacks, dinner), food menu, and campus access for day scholars.
-5. Career & placements: Eligibility criteria (6.5 CGPA, zero backlogs), company tiers (Standard, Dream, Super Dream), and final year capstone internships.
-6. Complaints & grievances: Filing maintenance tickets on the ERP portal (electrical, plumbing, Wi-Fi), mess food quality complaints to the Warden/Mess Committee, checking existing ticket status, and anti-ragging support (Helpline: 1800-180-5522).
-7. Campus News & Announcements: Placement drives, campus events, project exhibitions, examination timetables, holiday notices.
-8. Polite greetings: Responding warmly to "hi", "hello", "good morning", "how are you" by greeting {first_name} and asking what university or academic matter they need help with.
+CRITICAL RULES (ALWAYS FOLLOW):
+- You HAVE direct, real-time access to the student's academic records. The data provided below IS their live, personalized data.
+- ALWAYS use the data provided below to answer questions. NEVER claim you don't have access to records.
+- NEVER redirect students to ERP portals, student portals, or any external system. You are the system.
 
-STRICT HANDLING OF OFF-TOPIC / NON-CAMPUS QUERIES:
-If the user asks questions or gives prompts that are UNRELATED to campus life or university matters (for example: "tell me a joke", "who is the president of India", "what's the date today", "tell me about cricket", "write a movie script", general trivia, news, politics, Bollywood, weather forecasts, or general chat outside campus context):
--> You MUST politely and firmly decline and redirect the student back to campus topics.
--> State clearly that you are exclusively built for university and campus guidance.
--> Example decline: "I'm CampusMind AI, your dedicated university assistant. I am designed exclusively to help with campus and academic matters—such as your syllabus, exam dates, fee structures, hostel rules, attendance policies, or filing student grievances. How can I assist you with your college studies or campus life today?"
--> Do NOT fulfill the off-topic request (do NOT tell jokes, do NOT answer general trivia). Do NOT cite any document source for off-topic declines.
+{targeted_context_str}
 
-POSITIVE ATTENDANCE & ACADEMIC ELIGIBILITY GUIDANCE (CRITICAL - ZERO BUNK MENTIONS):
-- DO NOT encourage, suggest, calculate, or mention "bunk", "bunking", "skipping classes", or "safe bunks".
-- Always maintain an encouraging, positive, and constructive academic tone focused on meeting and maintaining university attendance requirements.
-- When a student asks about their attendance in a subject or asks if they are eligible:
-  1. State their current attendance clearly: [Attended] out of [Total Conducted] classes ([Percentage]%).
-  2. If their attendance is >= 75%:
-     - State positively that they are in Good Standing and fully Eligible for end-semester examinations.
-     - DO NOT mention how many classes they can skip or bunk. Emphasize maintaining their regular attendance.
-  3. If their attendance is below 75%:
-     - Calculate how many consecutive classes they must attend: Classes needed = max(0, 3*Total - 4*Attended).
-     - State constructively: "Your current attendance is [Percentage]%. To reach the mandatory 75% threshold, you need to attend the next [X] consecutive classes without absence."
-     - Mention the condonation bracket (65%-74.9% with medical documentation) if applicable.
-  4. NEVER use the words "bunk", "safe bunks", or "safe margin to miss". Always frame guidance around academic diligence, exam eligibility, and classes needed to achieve 75%.
+{lang_instruction}"""
 
-HANDLING GRIEVANCES & TICKET STATUS INQUIRIES:
-- If the student asks about the status of their filed complaints or maintenance tickets:
-  -> Look up their Live Student Grievance Tickets context.
-  -> Provide the exact Ticket Number, Title, Category, Status (Submitted / In Progress / Resolved), Priority, SLA, and Assigned Offline Desk.
-  -> If no tickets are filed, inform them kindly.
-- ONLY if the student explicitly asks to file, register, or lodge a new complaint/grievance, or explicitly reports a broken facility/issue they want escalated:
-  -> If problem is described, extract Category, Title, Description and append `[ACTION:SHOW_COMPLAINT_FORM:Category|Extracted Title|Extracted Description]`.
-  -> If problem is not described, append `[ACTION:SHOW_COMPLAINT_FORM:Category||]`.
-- NEVER output `[ACTION:SHOW_COMPLAINT_FORM]` for general questions, role explanations, greetings, or questions about what services the copilot provides.
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=query)
+    ]
 
-HANDLING TIMETABLE & CAMPUS NEWS INQUIRIES:
-- Ground schedule queries in their branch/year timetable from the Official Institutional Records.
-- Ground announcements in the Live Campus Announcements & Circulars.
+    return messages, user_branch, user_year, sources_set
 
-CITATION RULES & USP VERIFICATION (CRITICAL - ZERO RESPONSES WITHOUT SOURCES):
-- CampusMind AI's primary differentiator and core USP is that EVERY SINGLE RESPONSE IS PROVABLY SOURCE-BACKED AND GROUNDED in official university documentation.
-- You MUST ALWAYS conclude your response with the official institutional document citation tag on a new line at the very bottom:
-`🏷️ Source: [filename.md]`
-- EXACT MANDATORY CITATION MAPPING:
-  1. Attendance Tracking & Exam Eligibility: When discussing attendance percentage, subject attendance, 75% mandatory threshold, condonation (65%-74%), medical certificate exemptions, or exam detention rules, ALWAYS cite:
-     `🏷️ Source: [academic_policies_and_attendance.md]`
-  2. Student Grievances, Complaints & Maintenance: When discussing filing complaints, mess food quality, hostel repairs, electrical/wifi issues, SLA turnaround, or anti-ragging support, ALWAYS cite:
-     `🏷️ Source: [student_grievance_and_complaint_policy.md]`
-  3. Hostel Rules, Curfews & Campus Life: When discussing hostel gate curfews (10:00/10:30 PM), warden approvals, room regulations, night permissions, or mess timings, ALWAYS cite:
-     `🏷️ Source: [hostel_and_campus_rules.md]`
-  4. Placements & Internships: When discussing company recruitment tiers (Super Dream, Dream, Regular), 6.5 CGPA criteria, zero backlogs, or capstone internships, ALWAYS cite:
-     `🏷️ Source: [placement_and_internship_policy.md]`
-  5. Department Curriculum & Syllabus: When discussing registered courses, credits, lab subjects, or elective baskets, cite the student's exact branch/year syllabus file from the Official Institutional Records below (e.g. `syllabus_CSE_2024_2028_1styr.md`).
-  6. Exam Schedules: When discussing CAT-1, CAT-2, FAT finals, or practical exams, cite the branch/year exam schedule (e.g. `exam_schedule_CSE_1styr_2026.md`).
-  7. Timetables: When discussing class periods, day schedules, room locations, or faculty slots, cite the branch/year timetable (e.g. `timetable_CSE_1styr_2026.md`).
-  8. Fees & Tuition: When discussing fee amounts, installment payments, or late fee dates, cite the branch fee structure (e.g. `fee_structure_CSE_2024_2028_1styr.md`).
-  9. Polite Greetings, Assistant Overview & General Inquiries: ALWAYS cite:
-     `🏷️ Source: [academic_policies_and_attendance.md]`
-- NEVER omit the source tag. Ensure EVERY response concludes with:
-`🏷️ Source: [filename.md]`
+def is_casual_greeting(query: str) -> bool:
+    """Returns True ONLY for casual greetings or non-informational chit-chat."""
+    q = query.lower().strip()
+    casual_words = {"hi", "hello", "hey", "hola", "namaste", "morning", "evening", "afternoon", "who are you", "what can you do", "help", "thanks", "thank you", "bye", "goodbye", "ok", "okay", "cool", "sup", "yo"}
+    clean_words = re.findall(r'\b[a-z]+\b', q)
+    return not clean_words or all(w in casual_words for w in clean_words)
 
-Student Profile Context:
-- Student Name: {user_name}
-- Student ID / Roll No: {student_id}
-- Department / Branch: {user_branch}
-- Current Year: {user_year} Year
-- Admission Batch: {user_batch}
-- Living Status: {hostel_status}
+def extract_citation_and_clean(
+    raw_response: str,
+    query: str,
+    user_branch: str,
+    user_year: str,
+    sources_set: set
+) -> Tuple[str, str]:
+    """Cleans citation tags, validates against official records, removes orphan .md filenames from text, and removes any bunk mentions."""
+    clean_answer = raw_response.strip()
+    extracted_source = ""
+    kb_dir = BASE_DIR / "knowledge_base"
 
-Live Student Attendance Records:
-{attendance_context_str}
+    # 1. Standard pattern: Source: [file.md]
+    source_pattern = r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?([a-zA-Z0-9_\-\.\s]+\.md)\]?'
+    match = re.search(source_pattern, clean_answer, re.IGNORECASE)
+    
+    if match:
+        raw_src = match.group(1).strip().strip("[]*`")
+        clean_answer = re.sub(r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?[a-zA-Z0-9_\-\.\s]+\]?', '', clean_answer, flags=re.IGNORECASE).strip()
 
-Live Student Grievance Tickets (From Database):
-{tickets_context_str}
+        if raw_src and raw_src.lower() not in ["none", "n/a", "null", "no document", "erp", "attendance record", "live attendance", "system"]:
+            if not raw_src.endswith(".md"):
+                raw_src += ".md"
+            if (kb_dir / raw_src).exists():
+                extracted_source = raw_src
+            elif sources_set:
+                for s in sources_set:
+                    if raw_src.lower().replace(".md", "") in s.lower() or s.lower().replace(".md", "") in raw_src.lower():
+                        extracted_source = s
+                        break
+                if not extracted_source and list(sources_set):
+                    extracted_source = list(sources_set)[0]
+    else:
+        alt_pattern = r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?([^\n\r]+)\]?'
+        alt_match = re.search(alt_pattern, clean_answer, re.IGNORECASE)
+        if alt_match:
+            raw_src = alt_match.group(1).strip().strip("[]*`")
+            clean_answer = re.sub(alt_pattern, '', clean_answer, flags=re.IGNORECASE).strip()
+            if raw_src and raw_src.lower() not in ["none", "n/a", "null", "no document", "erp", "attendance record", "live attendance", "system"]:
+                for s in (list(sources_set) or [p.name for p in kb_dir.glob("*.md")]):
+                    clean_check = raw_src.lower().replace(".md", "").replace("_", " ")
+                    if clean_check in s.lower().replace("_", " ") or s.lower().replace(".md", "").replace("_", " ") in clean_check:
+                        extracted_source = s
+                        break
 
-Live Campus Announcements & Circulars:
-{news_context_str}
+    # 2. Catch any orphan or plain .md filenames leaked into the message text (e.g., ", student_grievance_and_complaint_policy.md")
+    orphan_matches = list(re.finditer(r'([a-zA-Z0-9_\-]+\.md)', clean_answer, re.IGNORECASE))
+    for m in orphan_matches:
+        filename = m.group(1).strip()
+        if (kb_dir / filename).exists():
+            if not extracted_source:
+                extracted_source = filename
+            # Clean the raw filename and any leading comma/brackets from message text
+            clean_answer = re.sub(r'[,;\s]*\[?' + re.escape(filename) + r'\]?', '', clean_answer).strip()
 
-Official Institutional Records (Knowledge Base):
-{context_str}
+    # Clean any trailing punctuation or commas left behind on newlines
+    clean_answer = re.sub(r'\n\s*[,;]\s*', '\n', clean_answer).strip()
+    clean_answer = re.sub(r'[,;]\s*$', '', clean_answer).strip()
 
-{lang_instruction}
-"""
+    # STRICT GATE: Only suppress source footer for casual greetings / chit-chat
+    q_lower = query.lower().strip()
+    if is_casual_greeting(query):
+        extracted_source = ""
+    elif not extracted_source:
+        # Context-aware fallback to official university knowledge base document
+        if any(k in q_lower for k in ["grievance", "complaint", "ticket", "warden", "caretaker", "mess", "food", "wifi", "maintenance", "packet loss"]):
+            extracted_source = "student_grievance_and_complaint_policy.md"
+        elif any(k in q_lower for k in ["attendance", "bunk", "percentage", "present", "absent", "condonation", "detained", "detention"]):
+            extracted_source = "academic_policies_and_attendance.md"
+        elif any(k in q_lower for k in ["hostel", "curfew", "gate", "night", "room", "in-time", "out-time"]):
+            extracted_source = "hostel_and_campus_rules.md"
+        elif any(k in q_lower for k in ["placement", "internship", "job", "career", "company", "recruit", "package"]):
+            extracted_source = "placement_and_internship_policy.md"
+        elif any(k in q_lower for k in ["exam", "test", "cat", "fat", "assessment"]):
+            matching_exams = list(kb_dir.glob(f"exam_schedule_{user_branch}_{user_year}yr_*.md"))
+            if matching_exams:
+                extracted_source = matching_exams[0].name
+        elif any(k in q_lower for k in ["timetable", "class", "routine", "timing", "slot"]):
+            matching_tts = list(kb_dir.glob(f"timetable_{user_branch}_{user_year}yr_*.md"))
+            if matching_tts:
+                extracted_source = matching_tts[0].name
+        elif any(k in q_lower for k in ["fee", "tuition", "payment", "installment", "due", "cost"]):
+            matching_fees = list(kb_dir.glob(f"fee_structure_{user_branch}_*_{user_year}yr.md"))
+            if matching_fees:
+                extracted_source = matching_fees[0].name
+        elif any(k in q_lower for k in ["syllabus", "subject", "curriculum", "course", "credit"]):
+            matching_syl = list(kb_dir.glob(f"syllabus_{user_branch}_*_{user_year}yr.md"))
+            if matching_syl:
+                extracted_source = matching_syl[0].name
+        elif sources_set:
+            extracted_source = list(sources_set)[0]
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{question}")
-    ])
+    # Strictly remove any bunk or safe bunk lines
+    sanitized_lines = []
+    for line in clean_answer.split("\n"):
+        if re.search(r'\bbunk(s|ing)?\b', line, re.IGNORECASE):
+            continue
+        sanitized_lines.append(line)
+    clean_answer = "\n".join(sanitized_lines).strip()
+
+    return clean_answer, extracted_source
+
+# -------------------------------------------------------------
+# MAIN INTELLIGENT AI ENTRYPOINTS (STANDARD & STREAMING)
+# -------------------------------------------------------------
+
+async def generate_rag_response(
+    query: str,
+    user_profile: Dict[str, Any],
+    preferred_language: str = None
+) -> Dict[str, Any]:
+    """Non-streaming AI response generation."""
+    start_time = time.time()
+    user_branch = normalize_branch_code(user_profile.get("branch", "CSE"))
+    user_year = normalize_year_code(user_profile.get("current_year", "1st"))
+    user_batch = user_profile.get("batch", "2024-2028")
+
+    docs, metadatas = query_vector_store(
+        query=query,
+        user_branch=user_branch,
+        user_year=user_year,
+        user_batch=user_batch,
+        top_k=4
+    )
+
+    messages, user_branch, user_year, sources_set = build_targeted_prompt(
+        query=query,
+        user_profile=user_profile,
+        preferred_language=preferred_language,
+        docs=docs,
+        metadatas=metadatas
+    )
 
     try:
-        raw_response = await invoke_llm_with_fallback(prompt, query)
-        
-        # Parse citation only if Gemini cited an official knowledge base record or if grounded in retrieved docs
-        extracted_source = ""
-        clean_answer = raw_response.strip()
-
-        # 1. Primary Regex: Look for 🏷️ Source: [Document Name] or **Source**: [Document Name]
-        source_pattern = r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?([a-zA-Z0-9_\-\.\s]+\.md)\]?'
-        match = re.search(source_pattern, clean_answer, re.IGNORECASE)
-        
-        if match:
-            raw_src = match.group(1).strip().strip("[]*`")
-            clean_answer = re.sub(r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?[a-zA-Z0-9_\-\.\s]+\]?', '', clean_answer, flags=re.IGNORECASE).strip()
-
-            if raw_src and raw_src.lower() not in ["none", "n/a", "null", "no document", "erp", "attendance record", "live attendance", "system"]:
-                if not raw_src.endswith(".md"):
-                    raw_src += ".md"
-                # Validate that this document actually exists
-                if (kb_dir / raw_src).exists():
-                    extracted_source = raw_src
-                elif sources_set:
-                    # Match closest source from the retrieved sources set
-                    for s in sources_set:
-                        if raw_src.lower().replace(".md", "") in s.lower() or s.lower().replace(".md", "") in raw_src.lower():
-                            extracted_source = s
-                            break
-                    if not extracted_source and list(sources_set):
-                        extracted_source = list(sources_set)[0]
-        else:
-            # Broad regex check if source was mentioned without .md extension
-            alt_pattern = r'(?:🏷️\s*)?(?:\*{1,2})?Source(?:\*{1,2})?:\s*\[?([^\n\r]+)\]?'
-            alt_match = re.search(alt_pattern, clean_answer, re.IGNORECASE)
-            if alt_match:
-                raw_src = alt_match.group(1).strip().strip("[]*`")
-                clean_answer = re.sub(alt_pattern, '', clean_answer, flags=re.IGNORECASE).strip()
-                if raw_src and raw_src.lower() not in ["none", "n/a", "null", "no document", "erp", "attendance record", "live attendance", "system"]:
-                    for s in (list(sources_set) or [p.name for p in kb_dir.glob("*.md")]):
-                        clean_check = raw_src.lower().replace(".md", "").replace("_", " ")
-                        if clean_check in s.lower().replace("_", " ") or s.lower().replace(".md", "").replace("_", " ") in clean_check:
-                            extracted_source = s
-                            break
-
-        # 2. Multi-Tier Topic-Aware Grounding Fallback:
-        # Guarantees that EVERY single response receives an authentic, existing institutional source
-        if not extracted_source:
-            q_lower = query.lower().strip()
-            
-            # (A) Match topic keywords directly to authoritative official gazette documents
-            if any(k in q_lower for k in ["attendance", "bunk", "percentage", "present", "absent", "condonation", "detained", "detention"]):
-                extracted_source = "academic_policies_and_attendance.md"
-            elif any(k in q_lower for k in ["grievance", "complaint", "ticket", "warden", "mess food", "plumbing", "wifi", "maintenance", "anti-ragging"]):
-                extracted_source = "student_grievance_and_complaint_policy.md"
-            elif any(k in q_lower for k in ["hostel", "curfew", "gate", "night", "room", "in-time", "out-time", "visitor"]):
-                extracted_source = "hostel_and_campus_rules.md"
-            elif any(k in q_lower for k in ["placement", "internship", "job", "career", "company", "recruit", "package", "cgpa criteria"]):
-                extracted_source = "placement_and_internship_policy.md"
-            elif any(k in q_lower for k in ["exam", "test", "cat", "fat", "assessment", "date", "schedule"]):
-                matching_exams = list(kb_dir.glob(f"exam_schedule_{user_branch}_{user_year}yr_*.md"))
-                if matching_exams:
-                    extracted_source = matching_exams[0].name
-            elif any(k in q_lower for k in ["timetable", "class", "routine", "timing", "slot", "period"]):
-                matching_tts = list(kb_dir.glob(f"timetable_{user_branch}_{user_year}yr_*.md"))
-                if matching_tts:
-                    extracted_source = matching_tts[0].name
-            elif any(k in q_lower for k in ["fee", "tuition", "payment", "installment", "due", "cost", "fine"]):
-                matching_fees = list(kb_dir.glob(f"fee_structure_{user_branch}_*_{user_year}yr.md"))
-                if matching_fees:
-                    extracted_source = matching_fees[0].name
-            elif any(k in q_lower for k in ["syllabus", "subject", "curriculum", "course", "credit", "elective"]):
-                matching_syl = list(kb_dir.glob(f"syllabus_{user_branch}_*_{user_year}yr.md"))
-                if matching_syl:
-                    extracted_source = matching_syl[0].name
-
-            # (B) If not matched by keywords, check if vector search retrieved sources
-            if not extracted_source and sources_set:
-                extracted_source = list(sources_set)[0]
-
-            # (C) Department / year default fallback
-            if not extracted_source:
-                branch_files = list(kb_dir.glob(f"*{user_branch}*{user_year}*.md"))
-                if branch_files:
-                    extracted_source = branch_files[0].name
-                else:
-                    extracted_source = "academic_policies_and_attendance.md"
-
-        # Post-processing: Strictly remove any bunk or safe bunk lines
-        sanitized_lines = []
-        for line in clean_answer.split("\n"):
-            if re.search(r'\bbunk(s|ing)?\b', line, re.IGNORECASE):
-                continue
-            sanitized_lines.append(line)
-        clean_answer = "\n".join(sanitized_lines).strip()
+        raw_response, used_model = await invoke_llm_with_fallback(messages)
+        response_time_ms = int((time.time() - start_time) * 1000)
+        clean_answer, extracted_source = extract_citation_and_clean(
+            raw_response, query, user_branch, user_year, sources_set
+        )
 
         return {
             "answer": clean_answer,
             "source": extracted_source,
             "branch": user_branch,
-            "year": user_year
+            "year": user_year,
+            "response_time_ms": response_time_ms,
+            "model_used": used_model,
+            "retrieved_document_count": len(docs)
         }
     except Exception as e:
+        response_time_ms = int((time.time() - start_time) * 1000)
         print(f"[RAG] Error invoking LLM: {e}")
         return {
             "answer": "I encountered a momentary connection hiccup. Please try asking your question again!",
-            "source": "academic_policies_and_attendance.md",
+            "source": "",
             "branch": user_branch,
-            "year": user_year
+            "year": user_year,
+            "response_time_ms": response_time_ms,
+            "model_used": "fallback-local",
+            "retrieved_document_count": len(docs) if 'docs' in locals() else 0
         }
 
+async def generate_rag_stream(
+    query: str,
+    user_profile: Dict[str, Any],
+    preferred_language: str = None
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Progressively streams tokens from Gemini via LangChain astream (Section 4.7).
+    Yields dictionary events:
+    {"type": "token", "token": chunk_text}
+    and final event:
+    {"type": "done", "answer": full_text, "source": source, ...}
+    """
+    start_time = time.time()
+    user_branch = normalize_branch_code(user_profile.get("branch", "CSE"))
+    user_year = normalize_year_code(user_profile.get("current_year", "1st"))
+    user_batch = user_profile.get("batch", "2024-2028")
+
+    docs, metadatas = query_vector_store(
+        query=query,
+        user_branch=user_branch,
+        user_year=user_year,
+        user_batch=user_batch,
+        top_k=4
+    )
+
+    messages, user_branch, user_year, sources_set = build_targeted_prompt(
+        query=query,
+        user_profile=user_profile,
+        preferred_language=preferred_language,
+        docs=docs,
+        metadatas=metadatas
+    )
+
+    accumulated_tokens = []
+    used_model = PRIMARY_MODEL
+    stream_successful = False
+
+    for model_name in MODEL_HIERARCHY:
+        try:
+            llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=0.2,
+                max_output_tokens=1024,
+                max_retries=1
+            )
+            async for chunk in llm.astream(messages):
+                text = extract_content_text(chunk.content)
+                if text:
+                    accumulated_tokens.append(text)
+                    yield {"type": "token", "token": text}
+            used_model = model_name
+            stream_successful = True
+            break
+        except Exception as e:
+            print(f"[RAG Stream] Switching from '{model_name}' due to: {e}")
+            accumulated_tokens.clear()
+            continue
+
+    if not stream_successful:
+        fallback_ans = "I encountered a momentary connection hiccup. Please try asking your question again!"
+        yield {"type": "token", "token": fallback_ans}
+        accumulated_tokens = [fallback_ans]
+
+    raw_response = "".join(accumulated_tokens)
+    clean_answer, extracted_source = extract_citation_and_clean(
+        raw_response, query, user_branch, user_year, sources_set
+    )
+    response_time_ms = int((time.time() - start_time) * 1000)
+
+    yield {
+        "type": "done",
+        "answer": clean_answer,
+        "source": extracted_source,
+        "branch": user_branch,
+        "year": user_year,
+        "response_time_ms": response_time_ms,
+        "model_used": used_model,
+        "retrieved_document_count": len(docs)
+    }

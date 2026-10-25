@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { API_BASE } from '../services/api';
+import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
 
 const NOTICES_DATA = [
   {
@@ -96,6 +97,9 @@ export default function CampusNewsModal({ isOpen, onClose }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState('All');
   const [expandedNoticeId, setExpandedNoticeId] = useState(null);
+  const modalRef = useRef(null);
+
+  useModalAccessibility({ isOpen, onClose, modalRef });
 
   if (!isOpen) return null;
 
@@ -110,12 +114,21 @@ export default function CampusNewsModal({ isOpen, onClose }) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg">
+    <div
+      onClick={(e) => handleBackdropClick(e, onClose)}
+      className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg"
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="campus-news-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        tabIndex={-1}
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
-        className="bg-surface-container-lowest rounded-2xl max-w-3xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container"
+        className="bg-surface-container-lowest rounded-2xl max-w-3xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container outline-none"
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
@@ -125,7 +138,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-headline-md text-headline-md text-on-surface font-semibold">
+                <h3 id="campus-news-modal-title" className="font-headline-md text-headline-md text-on-surface font-semibold">
                   Official Campus Circulars
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-secondary text-on-secondary font-label-sm text-label-sm font-semibold">
@@ -139,6 +152,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
           </div>
           <button
             onClick={onClose}
+            aria-label="Close campus circulars modal"
             className="w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined">close</span>

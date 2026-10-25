@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '../services/api';
+import Icon from './Icon';
+import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
 
 export default function AttendanceModal({ isOpen, onClose, userProfile }) {
   const [attendanceData, setAttendanceData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const modalRef = useRef(null);
+
+  useModalAccessibility({ isOpen, onClose, modalRef });
 
   useEffect(() => {
     if (isOpen) {
@@ -43,12 +48,21 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
   const isOverallSafe = overallPercentage >= 75.0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg">
+    <div
+      onClick={(e) => handleBackdropClick(e, onClose)}
+      className="fixed inset-0 z-50 bg-inverse-surface/40 backdrop-blur-sm flex items-center justify-center p-space-md sm:p-space-lg"
+    >
       <motion.div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attendance-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        tabIndex={-1}
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
-        className="bg-surface-container-lowest rounded-2xl max-w-4xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container"
+        className="bg-surface-container-lowest rounded-2xl max-w-4xl w-full p-space-lg shadow-2xl flex flex-col space-y-space-md max-h-[90vh] overflow-y-auto border border-surface-container outline-none"
       >
         {/* Top Header & Identity Bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md pb-space-sm border-b border-surface-container">
@@ -70,7 +84,7 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-space-xs">
-                <span className="font-headline-md text-headline-md text-on-surface font-semibold">
+                <span id="attendance-modal-title" className="font-headline-md text-headline-md text-on-surface font-semibold">
                   {userProfile?.full_name || 'Student Attendance'}
                 </span>
                 <span className="font-code-sm text-code-sm px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-medium">
@@ -78,7 +92,7 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
                 </span>
               </div>
               <span className="font-label-md text-label-md text-on-surface-variant">
-                {userProfile?.branch || 'CSE'} • {userProfile?.current_year || '1st'} Year • Official ERP Record
+                {userProfile?.branch || 'CSE'} • {userProfile?.current_year || '1st'} Year • Demo-Generated Student Context
               </span>
             </div>
           </div>
@@ -86,9 +100,10 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
           <div className="flex items-center gap-space-sm">
             <button
               onClick={onClose}
+              aria-label="Close attendance modal"
               className="w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[20px]">close</span>
+              <Icon name="close" className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -110,7 +125,7 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
                 </div>
               </div>
               <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary">
-                <span className="material-symbols-outlined text-[22px]">calendar_view_week</span>
+                <Icon name="calendar_view_week" className="w-5 h-5 text-primary" />
               </div>
             </div>
             <div className="mt-space-md pt-space-xs font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
@@ -134,7 +149,7 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
                 </div>
               </div>
               <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[22px]">how_to_reg</span>
+                <Icon name="how_to_reg" className="w-5 h-5 text-emerald-700" />
               </div>
             </div>
             <div className="mt-space-md pt-space-xs font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
@@ -156,7 +171,7 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
                 </div>
               </div>
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
-                <span className="material-symbols-outlined text-[22px]">event_busy</span>
+                <Icon name="event_busy" className="w-5 h-5 text-slate-700" />
               </div>
             </div>
             <div className="mt-space-md pt-space-xs flex items-center justify-between font-body-sm text-body-sm">
@@ -193,8 +208,8 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
 
           {isLoading ? (
             <div className="py-12 flex flex-col items-center justify-center text-on-surface-variant">
-              <span className="material-symbols-outlined text-[32px] text-primary animate-spin mb-2">sync</span>
-              <p className="font-body-sm text-body-sm">Loading synchronized ERP attendance records...</p>
+              <Icon name="sync" className="w-8 h-8 text-primary animate-spin mb-2" />
+              <p className="font-body-sm text-body-sm">Loading student attendance summary...</p>
             </div>
           ) : classwise.length === 0 ? (
             <div className="text-center py-8 font-body-sm text-body-sm text-on-surface-variant">
@@ -252,16 +267,12 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
                       {/* Positive Status Pill */}
                       {isSafe ? (
                         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 font-label-sm text-label-sm border border-emerald-200">
-                          <span className="material-symbols-outlined text-[16px] text-emerald-600">
-                            check_circle
-                          </span>
+                          <Icon name="check_circle" className="w-4 h-4 text-emerald-600 shrink-0" />
                           <span>Eligible for Examinations</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-800 font-label-sm text-label-sm border border-rose-200">
-                          <span className="material-symbols-outlined text-[16px] text-rose-600">
-                            error
-                          </span>
+                          <Icon name="error" className="w-4 h-4 text-rose-600 shrink-0" />
                           <span>
                             Must attend next: <strong>{neededClasses} consecutive classes</strong> to reach 75%
                           </span>
@@ -289,8 +300,8 @@ export default function AttendanceModal({ isOpen, onClose, userProfile }) {
             onClick={() => window.print()}
             className="px-space-md py-2 rounded-xl bg-primary text-on-primary hover:bg-primary-container font-label-md text-label-md flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
           >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            <span>Download Official Sheet</span>
+            <Icon name="print" className="w-4 h-4" />
+            <span>Print Attendance Summary</span>
           </button>
         </div>
       </motion.div>

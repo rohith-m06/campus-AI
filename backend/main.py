@@ -6,10 +6,11 @@ Includes JWT Authentication, Profile Management, SQLite Database, and Smart RAG 
 
 import os
 import sys
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 
 # Ensure proper encoding
@@ -22,9 +23,39 @@ load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 os.environ.pop("GEMINI_API_KEY", None)
 
-from fastapi import FastAPI, Depends, HTTPException, status
+# Demo evaluation mode configuration
+DEMO_MODE: bool = os.getenv("DEMO_MODE", "false").strip().lower() in ("true", "1", "yes")
+DEMO_ACCOUNTS = {
+    "arjun.sharma@campus.edu",
+    "priya.patel@campus.edu",
+    "rahul.verma@campus.edu",
+}
+DEMO_ACCOUNT_DEFAULTS = {
+    "arjun.sharma@campus.edu": {
+        "current_year": "2nd",
+        "batch": "2024-2028",
+        "branch": "CSE",
+        "student_id": "24CSE101"
+    },
+    "priya.patel@campus.edu": {
+        "current_year": "3rd",
+        "batch": "2023-2027",
+        "branch": "ECE",
+        "student_id": "23ECE044"
+    },
+    "rahul.verma@campus.edu": {
+        "current_year": "4th",
+        "batch": "2022-2026",
+        "branch": "MECH",
+        "student_id": "22MECH012"
+    }
+}
+
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 # Local application imports
 from backend.database import engine, Base, get_db, run_migrations
@@ -49,14 +80,26 @@ from backend.auth import (
     create_access_token,
     get_current_user
 )
-from backend.rag_engine import generate_rag_response, normalize_branch_code, normalize_year_code
+from backend.rag_engine import (
+    generate_rag_response,
+    generate_rag_stream,
+    warm_up_chromadb,
+    normalize_branch_code,
+    normalize_year_code
+)
+from backend.context_cache import (
+    get_cached_student_context,
+    invalidate_user_tickets_cache,
+    warm_student_context_cache
+)
 from backend.seed_users import seed_demo_accounts
 from backend.student_context import (
     get_student_attendance_summary,
     get_student_tickets_summary,
     get_campus_news_summary,
     build_or_load_student_persona,
-    get_student_courses
+    get_student_courses,
+    get_student_timetable_data
 )
 from backend.firebase_service import (
     init_firebase,
@@ -70,14 +113,47 @@ from backend.firebase_service import (
     get_chat_sessions_from_firebase,
     get_session_messages_from_firebase,
     delete_chat_session_from_firebase,
-    get_user_by_email_from_firebase
+    get_user_by_email_from_firebase,
+    track_user_login,
+    track_user_activity,
+    classify_intent
 )
+
+def sync_chat_interaction_to_firebase(
+    session_dict: Dict[str, Any],
+    user_msg_dict: Dict[str, Any],
+    ai_msg_dict: Dict[str, Any],
+    user_id: int
+):
+    """Synchronizes chat conversation and logs user activity to Firebase in the background."""
+    try:
+        save_chat_session_to_firebase(session_dict)
+        save_chat_message_to_firebase(session_dict["id"], user_msg_dict)
+        save_chat_message_to_firebase(session_dict["id"], ai_msg_dict)
+        track_user_activity(user_id)
+    except Exception as e:
+        print(f"[Firebase Background Sync] Notice: {e}")
+
+def build_persona_in_background(user_dict: Dict[str, Any]):
+    """Safely builds or loads persona in a fresh background DB session."""
+    try:
+        from backend.database import SessionLocal
+        bg_db = SessionLocal()
+        try:
+            build_or_load_student_persona(user_dict, bg_db)
+        finally:
+            bg_db.close()
+    except Exception as e:
+        print(f"[Auth] Background persona build notice: {e}")
 
 # 2. Initialize Database tables & auto-seed demo accounts
 Base.metadata.create_all(bind=engine)
 try:
     run_migrations()
-    seed_demo_accounts()
+    if DEMO_MODE:
+        seed_demo_accounts()
+    else:
+        print("[Database] DEMO_MODE is false: skipping demo account auto-seeding.")
 except Exception as e:
     print(f"[Database] Startup seed/migration notice: {e}")
 
@@ -91,6 +167,7 @@ try:
     count = collection.count()
     if count > 0:
         print(f"[Startup] Chroma knowledge base ready: {count} indexed chunks.")
+        warm_up_chromadb()
     else:
         print("[Startup] WARNING: Chroma collection is empty. RAG will use keyword-based source fallback.")
 except Exception as e:
@@ -104,9 +181,14 @@ app = FastAPI(
 )
 
 # 4. Configure CORS for frontend access
+default_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+custom_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins in dev
+    allow_origins=default_origins + custom_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,7 +199,11 @@ app.add_middleware(
 # -------------------------------------------------------------
 
 @app.post("/api/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
+def register_user(
+    req: UserRegisterRequest,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
+):
     """Registers a new student, creates structured persona (courses & attendance), and syncs with Firebase."""
     clean_email = req.email.lower().strip()
     clean_sid = req.student_id.upper().strip()
@@ -156,7 +242,7 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Build and persist structured student persona to Firebase Firestore
+    # Build and persist structured student persona to Firebase Firestore in background
     try:
         user_dict = {
             "id": user.id,
@@ -169,8 +255,10 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
             "hostel_status": user.hostel_status,
             "phone_number": user.phone_number
         }
-        save_user_to_firebase(user_dict)
-        build_or_load_student_persona(user_dict, db)
+        if background_tasks:
+            background_tasks.add_task(save_user_to_firebase, user_dict)
+            background_tasks.add_task(build_persona_in_background, user_dict)
+            background_tasks.add_task(track_user_login, user.id, user.email)
     except Exception as e:
         print(f"[Auth] Firebase persona sync notice: {e}")
 
@@ -182,18 +270,31 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
     )
 
 @app.post("/api/auth/login", response_model=TokenResponse)
-def login_user(req: UserLoginRequest, db: Session = Depends(get_db)):
+def login_user(
+    req: UserLoginRequest,
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
+):
     """Authenticates student credentials, loads persona memory, and returns JWT."""
     clean_email = req.email.lower().strip()
     clean_password = req.password.strip()
+
+    # Auto-seed demo accounts if missing in DEMO_MODE
+    if DEMO_MODE and clean_email in DEMO_ACCOUNTS:
+        existing_demo = db.query(User).filter(User.email == clean_email).first()
+        if not existing_demo:
+            try:
+                seed_demo_accounts()
+            except Exception as se:
+                print(f"[Auth] Demo account auto-seed notice: {se}")
 
     user = db.query(User).filter(User.email == clean_email).first()
 
     # If user not found in SQLite, check Firestore for multi-client / persistence sync
     if not user:
-        fb_user = get_user_by_email_from_firebase(clean_email)
-        if fb_user:
-            try:
+        try:
+            fb_user = get_user_by_email_from_firebase(clean_email)
+            if fb_user:
                 user = User(
                     full_name=fb_user.get("full_name", "Student"),
                     email=clean_email,
@@ -208,27 +309,39 @@ def login_user(req: UserLoginRequest, db: Session = Depends(get_db)):
                 db.add(user)
                 db.commit()
                 db.refresh(user)
-            except Exception as e:
-                print(f"[Auth] Firestore user restore notice: {e}")
+        except Exception as e:
+            print(f"[Auth] Firestore user restore notice: {e}")
 
-    # Check password with flexible fallback for demo evaluation accounts
+    # Check password: bcrypt verification for all regular users; demo bypass controlled strictly by DEMO_MODE
     is_valid = False
     if user:
-        if clean_email in ["arjun.sharma@campus.edu", "priya.patel@campus.edu", "rahul.verma@campus.edu"]:
-            # Demo evaluator 1-click accounts always authenticate
+        if DEMO_MODE and clean_email in DEMO_ACCOUNTS:
+            # Demo evaluator 1-click accounts bypass password only when DEMO_MODE=true
             is_valid = True
         elif verify_password(clean_password, user.hashed_password):
             is_valid = True
-        elif user.hashed_password == clean_password:
-            is_valid = True
 
     if not user or not is_valid:
+        error_detail = "Incorrect email or password."
+        if DEMO_MODE:
+            error_detail += " For demo accounts use password 'Campus@123'."
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password. For demo accounts use password 'Campus@123'."
+            detail=error_detail
         )
 
-    # Ensure student persona is loaded/saved in Firebase Firestore
+    # Auto-align demo account academic profiles to 2026 academic calendar
+    if DEMO_MODE and clean_email in DEMO_ACCOUNT_DEFAULTS:
+        d = DEMO_ACCOUNT_DEFAULTS[clean_email]
+        if user.current_year != d["current_year"] or user.batch != d["batch"]:
+            user.current_year = d["current_year"]
+            user.batch = d["batch"]
+            user.branch = d["branch"]
+            user.student_id = d["student_id"]
+            db.commit()
+            db.refresh(user)
+
+    # Offload Firebase sync and caching to background tasks so response is instantaneous
     try:
         user_dict = {
             "id": user.id,
@@ -241,8 +354,10 @@ def login_user(req: UserLoginRequest, db: Session = Depends(get_db)):
             "hostel_status": user.hostel_status,
             "phone_number": user.phone_number
         }
-        save_user_to_firebase(user_dict)
-        build_or_load_student_persona(user_dict, db)
+        if background_tasks:
+            background_tasks.add_task(save_user_to_firebase, user_dict)
+            background_tasks.add_task(warm_student_context_cache, user_dict)
+            background_tasks.add_task(track_user_login, user.id, user.email)
     except Exception as e:
         print(f"[Auth] Firebase login persona notice: {e}")
 
@@ -371,7 +486,7 @@ def get_session_messages(
     for m in messages:
         item = ChatMessageItem.model_validate(m)
         if item.role == "assistant" and (not item.source or not item.source.strip()):
-            item.source = "academic_policies_and_attendance.md"
+            item.source = None
         items.append(item)
     return items
 
@@ -399,16 +514,18 @@ def delete_chat_session(
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(
     req: ChatRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Core RAG Endpoint:
-    1. Attaches/creates user chat session
-    2. Builds live rich student context (exact courses, live attendance, grievances, campus announcements)
-    3. Injects student profile and queries vector store
-    4. Invokes Gemini for factual response
-    5. Saves conversation to SQLite and Firebase Firestore
+    Preferred flow:
+    1. Save locally (SQLite)
+    2. Generate AI response (Smart RAG Engine)
+    3. Save answer locally (SQLite)
+    4. Return answer immediately
+    5. Synchronize Firebase in background (chat session, messages, analytics, user activity)
     """
     session = get_or_create_chat_session(current_user.id, req.session_id, req.message, db)
 
@@ -416,16 +533,13 @@ async def chat_endpoint(
     generic_titles = ["new chat", "new copilot chat", "new conversation", "copilot chat"]
     current_title_lower = (session.title or "").strip().lower()
     if current_title_lower in generic_titles or current_title_lower.startswith("new "):
-        # Generate clean summary title based on the user's actual prompt
         clean_prompt = " ".join(req.message.strip().split())
-        # Remove common greeting prefixes if prompt continues
         lower_prompt = clean_prompt.lower()
         for prefix in ["can you tell me about ", "tell me about ", "what is ", "what are ", "how to ", "how can i ", "can you please ", "please "]:
             if lower_prompt.startswith(prefix) and len(clean_prompt) > len(prefix):
                 clean_prompt = clean_prompt[len(prefix):]
                 break
 
-        # Capitalize and trim cleanly
         new_title = clean_prompt[:36].strip()
         if len(clean_prompt) > 36:
             new_title += "..."
@@ -435,18 +549,8 @@ async def chat_endpoint(
         db.add(session)
         db.commit()
         db.refresh(session)
-        try:
-            save_chat_session_to_firebase({
-                "id": session.id,
-                "user_id": current_user.id,
-                "title": session.title,
-                "created_at": session.created_at.isoformat(),
-                "updated_at": datetime.utcnow().isoformat()
-            })
-        except Exception as e:
-            print(f"[Session Title] Firebase sync notice: {e}")
 
-    # 1. Save student's user message
+    # 1. Save student's user message locally
     user_msg = ChatMessage(
         session_id=session.id,
         user_id=current_user.id,
@@ -457,47 +561,17 @@ async def chat_endpoint(
     db.commit()
     db.refresh(user_msg)
 
-    # Sync message to Firebase Firestore
-    save_chat_message_to_firebase(session.id, {
-        "id": user_msg.id,
-        "session_id": session.id,
-        "user_id": current_user.id,
-        "role": "user",
-        "content": req.message,
-        "created_at": user_msg.created_at.isoformat()
-    })
+    # 2. Retrieve student context from high-speed multi-tiered cache (Section 4.2)
+    profile_dict = get_cached_student_context(current_user, db)
 
-    # 2. Build live rich student context using student's actual student_id
-    attendance_summary = get_student_attendance_summary(
-        branch=current_user.branch,
-        current_year=current_user.current_year,
-        student_id=current_user.student_id
-    )
-    tickets_summary = get_student_tickets_summary(current_user.id, db)
-    news_summary = get_campus_news_summary()
-    courses_list = get_student_courses(current_user.branch, current_user.current_year)
-
-    profile_dict = {
-        "full_name": current_user.full_name,
-        "student_id": current_user.student_id,
-        "branch": current_user.branch,
-        "current_year": current_user.current_year,
-        "batch": current_user.batch,
-        "hostel_status": current_user.hostel_status,
-        "courses": courses_list,
-        "attendance_summary": attendance_summary,
-        "tickets": tickets_summary,
-        "campus_news": news_summary
-    }
-
-    # 3. Generate response using Smart RAG Engine
+    # 3. Generate response using Smart RAG Engine (with targeted prompt reduction, Section 4.3)
     rag_result = await generate_rag_response(
         query=req.message,
         user_profile=profile_dict,
         preferred_language=req.preferred_language
     )
 
-    # 4. Save AI assistant message
+    # 4. Save AI assistant message locally
     ai_msg = ChatMessage(
         session_id=session.id,
         user_id=current_user.id,
@@ -510,17 +584,57 @@ async def chat_endpoint(
     db.commit()
     db.refresh(ai_msg)
 
-    # Sync AI message to Firebase Firestore
-    save_chat_message_to_firebase(session.id, {
-        "id": ai_msg.id,
-        "session_id": session.id,
+    # 5. Classify intent and prepare analytics payloads for Firebase background sync
+    detected_intent = classify_intent(req.message)
+
+    user_msg_sync = {
+        "id": user_msg.id,
         "user_id": current_user.id,
+        "session_id": session.id,
+        "role": "user",
+        "content": req.message,
+        "source": None,
+        "branch": current_user.branch,
+        "current_year": current_user.current_year,
+        "batch": current_user.batch,
+        "intent": detected_intent,
+        "created_at": user_msg.created_at.isoformat()
+    }
+
+    ai_msg_sync = {
+        "id": ai_msg.id,
+        "user_id": current_user.id,
+        "session_id": session.id,
         "role": "assistant",
         "content": rag_result["answer"],
         "source": rag_result["source"],
+        "branch": current_user.branch,
+        "current_year": current_user.current_year,
+        "batch": current_user.batch,
+        "response_time_ms": rag_result.get("response_time_ms", 0),
+        "model_used": rag_result.get("model_used", "gemini-2.5-flash"),
+        "retrieved_document_count": rag_result.get("retrieved_document_count", 0),
         "created_at": ai_msg.created_at.isoformat()
-    })
+    }
 
+    session_sync = {
+        "id": session.id,
+        "user_id": current_user.id,
+        "title": session.title,
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat()
+    }
+
+    # 6. Synchronize Firebase in background (Zero blocking latency on response)
+    background_tasks.add_task(
+        sync_chat_interaction_to_firebase,
+        session_dict=session_sync,
+        user_msg_dict=user_msg_sync,
+        ai_msg_dict=ai_msg_sync,
+        user_id=current_user.id
+    )
+
+    # 7. Return answer immediately
     return ChatResponse(
         answer=rag_result["answer"],
         source=rag_result["source"],
@@ -528,6 +642,141 @@ async def chat_endpoint(
         year=current_user.current_year,
         session_id=session.id,
         session_title=session.title
+    )
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(
+    req: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Streaming RAG Endpoint (Section 4.7):
+    Streams generated tokens progressively using Server-Sent Events (SSE).
+    Substantially improves perceived latency for the student.
+    Persists conversation locally in SQLite and synchronizes Firebase in background.
+    """
+    session = get_or_create_chat_session(current_user.id, req.session_id, req.message, db)
+
+    # Auto-rename generic session title
+    generic_titles = ["new chat", "new copilot chat", "new conversation", "copilot chat"]
+    current_title_lower = (session.title or "").strip().lower()
+    if current_title_lower in generic_titles or current_title_lower.startswith("new "):
+        clean_prompt = " ".join(req.message.strip().split())
+        lower_prompt = clean_prompt.lower()
+        for prefix in ["can you tell me about ", "tell me about ", "what is ", "what are ", "how to ", "how can i ", "can you please ", "please "]:
+            if lower_prompt.startswith(prefix) and len(clean_prompt) > len(prefix):
+                clean_prompt = clean_prompt[len(prefix):]
+                break
+        new_title = clean_prompt[:36].strip()
+        if len(clean_prompt) > 36:
+            new_title += "..."
+        new_title = new_title[0].upper() + new_title[1:] if len(new_title) > 0 else "New Chat"
+        session.title = new_title
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    # 1. Save student's user message locally in SQLite
+    user_msg = ChatMessage(
+        session_id=session.id,
+        user_id=current_user.id,
+        role="user",
+        content=req.message
+    )
+    db.add(user_msg)
+    db.commit()
+    db.refresh(user_msg)
+
+    # 2. Retrieve student context from high-speed cache
+    profile_dict = get_cached_student_context(current_user, db)
+
+    async def event_generator():
+        final_data = None
+        try:
+            async for event in generate_rag_stream(
+                query=req.message,
+                user_profile=profile_dict,
+                preferred_language=req.preferred_language
+            ):
+                if event["type"] == "token":
+                    yield f"data: {json.dumps(event)}\n\n"
+                elif event["type"] == "done":
+                    final_data = event
+                    event["session_id"] = session.id
+                    event["session_title"] = session.title
+                    yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            err_event = {
+                "type": "error",
+                "detail": str(e)
+            }
+            yield f"data: {json.dumps(err_event)}\n\n"
+
+        # After stream completes: Save AI assistant message locally
+        if final_data:
+            try:
+                ai_msg = ChatMessage(
+                    session_id=session.id,
+                    user_id=current_user.id,
+                    role="assistant",
+                    content=final_data["answer"],
+                    source=final_data["source"]
+                )
+                session.updated_at = datetime.utcnow()
+                db.add(ai_msg)
+                db.commit()
+                db.refresh(ai_msg)
+
+                # Background Firebase sync (zero latency impact)
+                detected_intent = classify_intent(req.message)
+                user_msg_sync = {
+                    "id": user_msg.id,
+                    "user_id": current_user.id,
+                    "session_id": session.id,
+                    "role": "user",
+                    "content": req.message,
+                    "source": None,
+                    "branch": current_user.branch,
+                    "current_year": current_user.current_year,
+                    "batch": current_user.batch,
+                    "intent": detected_intent,
+                    "created_at": user_msg.created_at.isoformat()
+                }
+                ai_msg_sync = {
+                    "id": ai_msg.id,
+                    "user_id": current_user.id,
+                    "session_id": session.id,
+                    "role": "assistant",
+                    "content": final_data["answer"],
+                    "source": final_data["source"],
+                    "branch": current_user.branch,
+                    "current_year": current_user.current_year,
+                    "batch": current_user.batch,
+                    "response_time_ms": final_data.get("response_time_ms", 0),
+                    "model_used": final_data.get("model_used", "gemini-2.5-flash"),
+                    "retrieved_document_count": final_data.get("retrieved_document_count", 0),
+                    "created_at": ai_msg.created_at.isoformat()
+                }
+                session_sync = {
+                    "id": session.id,
+                    "user_id": current_user.id,
+                    "title": session.title,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat()
+                }
+                sync_chat_interaction_to_firebase(session_sync, user_msg_sync, ai_msg_sync, current_user.id)
+            except Exception as se:
+                print(f"[Chat Stream Sync] Error saving completion: {se}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
     )
 
 @app.get("/api/chat/history", response_model=List[ChatMessageItem])
@@ -581,6 +830,15 @@ def get_student_news():
     """Returns active verified university announcements and circulars."""
     return get_campus_news_summary()
 
+@app.get("/api/student/timetable")
+def get_student_timetable(current_user: User = Depends(get_current_user)):
+    """Returns structured weekly timetable schedule for logged in student."""
+    return get_student_timetable_data(
+        branch=current_user.branch,
+        current_year=current_user.current_year,
+        user_batch=current_user.batch
+    )
+
 # -------------------------------------------------------------
 # STUDENT GRIEVANCE & COMPLAINT TICKET ENDPOINTS
 # -------------------------------------------------------------
@@ -589,12 +847,13 @@ def get_student_news():
 def create_ticket(
     req: TicketCreateRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None
 ):
     """
     Submits an official student grievance / maintenance ticket directly from chat.
     Auto-assigns tracking ID, SLA turnaround, and offline office location.
-    Persists to SQLite and Firebase Firestore.
+    Persists to SQLite and Firebase Firestore (background task).
     """
     import random
     import time
@@ -629,8 +888,8 @@ def create_ticket(
     db.commit()
     db.refresh(ticket)
 
-    # Sync ticket to Firebase Firestore
-    save_ticket_to_firebase({
+    # Sync ticket to Firebase Firestore in background
+    ticket_dict = {
         "id": ticket.id,
         "ticket_number": ticket.ticket_number,
         "user_id": current_user.id,
@@ -645,7 +904,14 @@ def create_ticket(
         "estimated_sla": ticket.estimated_sla,
         "offline_option": ticket.offline_option,
         "created_at": ticket.created_at.isoformat()
-    })
+    }
+    # Invalidate user tickets context cache immediately (Section 4.2)
+    invalidate_user_tickets_cache(current_user.id)
+
+    if background_tasks:
+        background_tasks.add_task(save_ticket_to_firebase, ticket_dict)
+    else:
+        save_ticket_to_firebase(ticket_dict)
 
     return ticket
 
@@ -870,6 +1136,7 @@ def health_check():
         "status": "healthy",
         "app": "CampusMind AI Backend",
         "version": "2.0.0",
-        "ai_model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        "ai_model": os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+        "demo_mode": DEMO_MODE
     }
 
