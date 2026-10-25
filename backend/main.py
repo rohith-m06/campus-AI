@@ -23,8 +23,8 @@ load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 os.environ.pop("GEMINI_API_KEY", None)
 
-# Demo evaluation mode configuration
-DEMO_MODE: bool = os.getenv("DEMO_MODE", "false").strip().lower() in ("true", "1", "yes")
+# Demo evaluation mode configuration (default true for hackathon / evaluation accessibility)
+DEMO_MODE: bool = os.getenv("DEMO_MODE", "true").strip().lower() in ("true", "1", "yes")
 DEMO_ACCOUNTS = {
     "arjun.sharma@campus.edu",
     "priya.patel@campus.edu",
@@ -150,10 +150,7 @@ def build_persona_in_background(user_dict: Dict[str, Any]):
 Base.metadata.create_all(bind=engine)
 try:
     run_migrations()
-    if DEMO_MODE:
-        seed_demo_accounts()
-    else:
-        print("[Database] DEMO_MODE is false: skipping demo account auto-seeding.")
+    seed_demo_accounts(force=True)
 except Exception as e:
     print(f"[Database] Startup seed/migration notice: {e}")
 
@@ -281,12 +278,12 @@ def login_user(
     clean_email = req.email.lower().strip()
     clean_password = req.password.strip()
 
-    # Auto-seed demo accounts if missing in DEMO_MODE
-    if DEMO_MODE and clean_email in DEMO_ACCOUNTS:
+    # Auto-seed demo accounts if missing
+    if clean_email in DEMO_ACCOUNTS:
         existing_demo = db.query(User).filter(User.email == clean_email).first()
         if not existing_demo:
             try:
-                seed_demo_accounts()
+                seed_demo_accounts(force=True)
             except Exception as se:
                 print(f"[Auth] Demo account auto-seed notice: {se}")
 
@@ -314,19 +311,17 @@ def login_user(
         except Exception as e:
             print(f"[Auth] Firestore user restore notice: {e}")
 
-    # Check password: bcrypt verification for all regular users; demo bypass controlled strictly by DEMO_MODE
+    # Check password: allow demo accounts with Campus@123, demo123, or in DEMO_MODE
     is_valid = False
     if user:
-        if DEMO_MODE and clean_email in DEMO_ACCOUNTS:
-            # Demo evaluator 1-click accounts bypass password only when DEMO_MODE=true
-            is_valid = True
+        if clean_email in DEMO_ACCOUNTS:
+            if DEMO_MODE or clean_password in ("Campus@123", "demo123") or verify_password(clean_password, user.hashed_password):
+                is_valid = True
         elif verify_password(clean_password, user.hashed_password):
             is_valid = True
 
     if not user or not is_valid:
-        error_detail = "Incorrect email or password."
-        if DEMO_MODE:
-            error_detail += " For demo accounts use password 'Campus@123'."
+        error_detail = "Incorrect email or password. For demo accounts use password 'Campus@123'."
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error_detail
