@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Icon from './Icon';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
 import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
@@ -119,7 +120,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
           aria-label="Close Grievance Portal"
           className="absolute top-4 right-4 z-20 w-9 h-9 rounded-xl bg-surface-container/70 hover:bg-surface-container text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors cursor-pointer shadow-xs border border-surface-container"
         >
-          <span className="material-symbols-outlined text-[20px]">close</span>
+          <Icon name="close" className="text-[20px]" />
         </button>
 
         {/* Banner Section */}
@@ -148,7 +149,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
             <div className="flex items-center gap-space-sm flex-wrap">
               <div className="flex items-center gap-space-sm bg-surface-container-lowest px-space-md py-space-xs rounded-xl shadow-2xs border border-surface-container">
                 <div className="w-9 h-9 rounded-lg bg-tertiary-fixed flex items-center justify-center text-tertiary-container">
-                  <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                  <Icon name="verified_user" className="text-[20px]" />
                 </div>
                 <div className="flex flex-col">
                   <span className="font-headline-sm text-headline-sm text-on-surface">24h SLA</span>
@@ -158,7 +159,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
 
               <div className="flex items-center gap-space-sm bg-surface-container-lowest px-space-md py-space-xs rounded-xl shadow-2xs border border-surface-container">
                 <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined text-[20px]">balance</span>
+                  <Icon name="balance" className="text-[20px]" />
                 </div>
                 <div className="flex flex-col">
                   <span className="font-headline-sm text-headline-sm text-on-surface">Ombudsman #4</span>
@@ -180,7 +181,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                <Icon name="receipt_long" className="text-[18px]" />
                 <span>Active &amp; Past Tickets</span>
                 <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary-fixed text-primary font-code-sm text-code-sm font-semibold">
                   {tickets.length}
@@ -196,7 +197,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">add_task</span>
+                <Icon name="add_task" className="text-[18px]" />
                 <span>+ File New Grievance</span>
               </button>
             </div>
@@ -213,13 +214,13 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
         {/* Notifications */}
         {error && (
           <div className="p-space-sm bg-rose-50 border border-rose-200 text-rose-800 rounded-xl font-body-sm text-body-sm flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">error</span>
+            <Icon name="error" className="text-[18px]" />
             <span>{error}</span>
           </div>
         )}
         {successMsg && (
           <div className="p-space-sm bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-body-sm text-body-sm flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+            <Icon name="check_circle" className="text-[18px]" />
             <span>{successMsg}</span>
           </div>
         )}
@@ -234,9 +235,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                   <span className="font-label-sm text-label-sm uppercase tracking-wider font-semibold">
                     Unresolved Issues
                   </span>
-                  <span className="material-symbols-outlined text-secondary text-[20px]">
-                    pending_actions
-                  </span>
+                  <Icon name="pending_actions" className="text-secondary text-[20px]" />
                 </div>
                 <div className="mt-space-sm flex items-baseline gap-space-xs">
                   <span className="font-display-lg text-display-lg font-bold text-on-surface">
@@ -261,7 +260,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                   <span className="font-label-sm text-label-sm uppercase tracking-wider font-semibold">
                     Total Petitions
                   </span>
-                  <span className="material-symbols-outlined text-primary text-[20px]">history_edu</span>
+                  <Icon name="history_edu" className="text-primary text-[20px]" />
                 </div>
                 <div className="mt-space-sm flex items-baseline gap-space-xs">
                   <span className="font-display-lg text-display-lg font-bold text-on-surface">
@@ -281,9 +280,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                   <span className="font-label-sm text-label-sm uppercase tracking-wider font-semibold">
                     Resolved Term Avg
                   </span>
-                  <span className="material-symbols-outlined text-tertiary-container text-[20px]">
-                    task_alt
-                  </span>
+                  <Icon name="task_alt" className="text-tertiary-container text-[20px]" />
                 </div>
                 <div className="mt-space-sm flex items-baseline gap-space-xs">
                   <span className="font-display-lg text-display-lg font-bold text-tertiary-container">
@@ -312,16 +309,12 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
 
               {loading ? (
                 <div className="py-12 flex flex-col items-center justify-center text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[32px] text-primary animate-spin mb-2">
-                    sync
-                  </span>
+                  <Icon name="sync" className="text-[32px] text-primary animate-spin mb-2" />
                   <p className="font-body-sm text-body-sm">Loading grievance ledger...</p>
                 </div>
               ) : tickets.length === 0 ? (
                 <div className="p-space-lg text-center bg-surface-container-low rounded-xl border border-surface-container text-on-surface-variant">
-                  <span className="material-symbols-outlined text-[36px] text-primary mb-2">
-                    check_circle
-                  </span>
+                  <Icon name="check_circle" className="text-[36px] text-primary mb-2" />
                   <p className="font-headline-sm text-headline-sm text-on-surface font-medium">
                     No active grievances recorded.
                   </p>
@@ -351,9 +344,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                                 {t.ticket_number}
                               </span>
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-high text-on-surface">
-                                <span className="material-symbols-outlined text-[14px] mr-1 text-primary">
-                                  apartment
-                                </span>
+                                <Icon name="apartment" className="text-[14px] mr-1 text-primary" />
                                 {t.category}
                               </span>
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm">
@@ -413,7 +404,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                             onClick={() => alert(`Tracking Ticket ${t.ticket_number}\nStatus: ${t.status || 'In Progress'}\nTurnaround SLA: ${t.estimated_sla || '24h'}`)}
                             className="flex items-center justify-center gap-space-xs px-space-sm py-1.5 rounded-lg bg-primary-container text-on-primary font-label-md text-label-md hover:bg-primary transition-all shadow-xs cursor-pointer"
                           >
-                            <span className="material-symbols-outlined text-[16px]">timeline</span>
+                            <Icon name="timeline" className="text-[16px]" />
                             <span>Track Ticket</span>
                           </button>
                         </div>
@@ -458,7 +449,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                   </div>
                 </div>
                 <div className="flex items-center gap-space-xs text-on-surface-variant bg-surface-container-lowest px-space-sm py-1 rounded-lg text-xs">
-                  <span className="material-symbols-outlined text-[16px] text-primary">apartment</span>
+                  <Icon name="apartment" className="text-[16px] text-primary" />
                   <span>Quarters: <strong>{userProfile?.hostel_status || 'Hostel Block B'}</strong></span>
                 </div>
               </div>
@@ -570,9 +561,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
 
                 <div className="pt-space-xs flex flex-col sm:flex-row items-center justify-between gap-space-md border-t border-surface-container">
                   <div className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm">
-                    <span className="material-symbols-outlined text-[18px] text-tertiary-container shrink-0">
-                      shield
-                    </span>
+                    <Icon name="shield" className="text-[18px] text-tertiary-container shrink-0" />
                     <span>Direct cryptographic dispatch to Student Welfare Ombudsman.</span>
                   </div>
 
@@ -581,9 +570,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                     disabled={submitting}
                     className="w-full sm:w-auto flex items-center justify-center gap-space-xs px-space-lg py-2.5 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-semibold hover:bg-primary-container transition-all shadow-md cursor-pointer disabled:opacity-50"
                   >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {submitting ? 'sync' : 'assignment_turned_in'}
-                    </span>
+                    <Icon name={submitting ? 'sync' : 'assignment_turned_in'} className="text-[18px]" />
                     <span>{submitting ? 'Dispatching...' : 'Submit Grievance to Administration'}</span>
                   </button>
                 </div>
@@ -594,7 +581,7 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
             <div className="w-full lg:w-72 flex flex-col gap-space-md">
               <div className="bg-surface-container-low p-space-md rounded-xl border border-surface-container flex flex-col gap-space-xs">
                 <div className="flex items-center gap-space-xs text-primary font-label-md text-label-md font-semibold">
-                  <span className="material-symbols-outlined text-[18px]">verified</span>
+                  <Icon name="verified" className="text-[18px]" />
                   <span>Statutory Protection</span>
                 </div>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -611,21 +598,15 @@ export default function GrievancesModal({ isOpen, onClose, userProfile, onTicket
                 </span>
                 <ul className="space-y-space-xs font-body-sm text-body-sm text-on-surface-variant">
                   <li className="flex items-start gap-space-xs">
-                    <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">
-                      timer
-                    </span>
+                    <Icon name="timer" className="text-primary text-[16px] shrink-0 mt-0.5" />
                     <span><strong>Critical:</strong> On-ground review within 120 minutes.</span>
                   </li>
                   <li className="flex items-start gap-space-xs">
-                    <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">
-                      timer
-                    </span>
+                    <Icon name="timer" className="text-primary text-[16px] shrink-0 mt-0.5" />
                     <span><strong>Wi-Fi &amp; Infrastructure:</strong> Diagnostic within 4 hours.</span>
                   </li>
                   <li className="flex items-start gap-space-xs">
-                    <span className="material-symbols-outlined text-primary text-[16px] shrink-0 mt-0.5">
-                      timer
-                    </span>
+                    <Icon name="timer" className="text-primary text-[16px] shrink-0 mt-0.5" />
                     <span><strong>Academic:</strong> 7 working days with review board.</span>
                   </li>
                 </ul>

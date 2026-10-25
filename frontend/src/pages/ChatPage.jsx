@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Icon from '../components/Icon';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -541,7 +542,7 @@ export default function ChatPage() {
               title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
               aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
-              <span className="material-symbols-outlined text-[18px]">dock_to_left</span>
+              <Icon name="dock_to_left" className="text-[18px]" />
             </button>
           </div>
 
@@ -578,7 +579,7 @@ export default function ChatPage() {
                 }`}
             >
               <span className="flex items-center justify-center gap-space-xs font-label-md text-label-md font-semibold">
-                <span className="material-symbols-outlined text-[20px]">add</span>
+                <Icon name="add" className="text-[20px]" />
                 {sidebarOpen && 'New Copilot Chat'}
               </span>
               {sidebarOpen && (
@@ -611,7 +612,7 @@ export default function ChatPage() {
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[20px]">neurology</span>
+                <Icon name="neurology" className="text-[20px]" />
                 {sidebarOpen && <span className="font-label-md text-label-md">Active Copilot</span>}
               </div>
             </button>
@@ -628,13 +629,13 @@ export default function ChatPage() {
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className={`material-symbols-outlined text-[20px] ${attendanceAlertCount > 0 ? 'text-error' : 'text-tertiary-container'}`}>fact_check</span>
+                <Icon name="fact_check" className={`text-[20px] ${attendanceAlertCount > 0 ? 'text-error' : 'text-tertiary-container'}`} />
                 {sidebarOpen && <span className="font-label-md text-label-md">Course Attendance</span>}
               </div>
               {attendanceAlertCount > 0 && (
                 sidebarOpen ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-error font-label-sm text-label-sm font-semibold border border-rose-500/20">
-                    <span className="material-symbols-outlined text-[13px]">warning</span>
+                    <Icon name="warning" className="text-[13px]" />
                     <span>{attendanceAlertCount} Below 75%</span>
                   </span>
                 ) : (
@@ -655,7 +656,7 @@ export default function ChatPage() {
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[20px] text-primary">calendar_today</span>
+                <Icon name="calendar_today" className="text-[20px] text-primary" />
                 {sidebarOpen && <span className="font-label-md text-label-md">Timetable &amp; Schedule</span>}
               </div>
             </button>
@@ -672,7 +673,7 @@ export default function ChatPage() {
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[20px] text-secondary">support_agent</span>
+                <Icon name="support_agent" className="text-[20px] text-secondary" />
                 {sidebarOpen && <span className="font-label-md text-label-md">Student Grievances</span>}
               </div>
               {sidebarOpen && (
@@ -694,7 +695,7 @@ export default function ChatPage() {
                 }`}
             >
               <div className="flex items-center justify-center gap-space-sm">
-                <span className="material-symbols-outlined text-[20px] text-primary-container">campaign</span>
+                <Icon name="campaign" className="text-[20px] text-primary-container" />
                 {sidebarOpen && <span className="font-label-md text-label-md">Campus Circulars</span>}
               </div>
               {sidebarOpen && <span className="w-2 h-2 rounded-full bg-secondary"></span>}
@@ -735,9 +736,7 @@ export default function ChatPage() {
                       aria-label={`Open conversation: ${s.title}`}
                       className="flex items-center gap-space-xs truncate min-w-0 flex-1 text-left bg-transparent border-none p-0 text-inherit font-inherit cursor-pointer outline-none focus-visible:underline"
                     >
-                      <span className="material-symbols-outlined text-[16px] text-outline shrink-0">
-                        chat_bubble
-                      </span>
+                      <Icon name="chat_bubble" className="text-[16px] text-outline shrink-0" />
                       <span className="font-label-md text-label-md truncate">{s.title}</span>
                     </button>
 
@@ -751,7 +750,7 @@ export default function ChatPage() {
                       title="Delete chat session"
                       aria-label={`Delete conversation ${s.title}`}
                     >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                      <Icon name="delete" className="text-[16px]" />
                     </button>
                   </div>
                 ))
@@ -765,7 +764,7 @@ export default function ChatPage() {
           <div className="p-space-md mt-space-md bg-surface-container-lowest border-t border-surface-container">
             <div className="flex items-center justify-between px-space-xs">
               <div className="flex items-center gap-space-xs text-on-surface-variant">
-                <span className="material-symbols-outlined text-[16px]">translate</span>
+                <Icon name="translate" className="text-[16px]" />
                 <span className="font-label-sm text-label-sm font-medium">Language</span>
               </div>
               <select
@@ -812,7 +811,7 @@ export default function ChatPage() {
               aria-label={sidebarOpen ? "Close sidebar menu" : "Open sidebar menu"}
               className="lg:hidden min-w-[44px] min-h-[44px] p-2 rounded-xl hover:bg-surface-container text-on-surface-variant flex items-center justify-center cursor-pointer transition-colors"
             >
-              <span className="material-symbols-outlined text-[24px]">menu</span>
+              <Icon name="menu" className="text-[24px]" />
             </button>
 
             <BrandLogo className="w-8 h-8 shrink-0" />
@@ -824,7 +823,7 @@ export default function ChatPage() {
           <div className="flex items-center gap-space-sm sm:gap-space-md">
             {/* Context Pill - Hidden on mobile to avoid crowded badges (8.6) */}
             <div className="hidden sm:flex items-center gap-space-xs px-space-sm py-1.5 rounded-xl bg-surface-container-low border border-surface-container text-on-surface-variant font-label-md text-label-md">
-              <span className="material-symbols-outlined text-[16px] text-primary">school</span>
+              <Icon name="school" className="text-[16px] text-primary" />
               <span>
                 {user?.branch || 'CSE'} • {user?.current_year ? `${user.current_year} Year` : '2nd Year'}
               </span>
@@ -838,7 +837,7 @@ export default function ChatPage() {
               title="Campus Circulars"
               aria-label="Campus circulars notifications"
             >
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
+              <Icon name="notifications" className="text-[20px]" />
               <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-secondary"></span>
             </button>
 
@@ -882,7 +881,7 @@ export default function ChatPage() {
                     <div className="space-y-space-xs py-1">
                       <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-surface-container-low text-label-sm font-label-sm">
                         <span className="text-on-surface-variant flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-primary">badge</span>
+                          <Icon name="badge" className="text-[15px] text-primary" />
                           Student ID
                         </span>
                         <span className="font-semibold text-on-surface font-mono">{user?.student_id || '24CSE101'}</span>
@@ -890,7 +889,7 @@ export default function ChatPage() {
 
                       <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-surface-container-low text-label-sm font-label-sm">
                         <span className="text-on-surface-variant flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-primary">school</span>
+                          <Icon name="school" className="text-[15px] text-primary" />
                           Department
                         </span>
                         <span className="font-semibold text-on-surface">{user?.branch || 'Computer Science (CSE)'}</span>
@@ -898,7 +897,7 @@ export default function ChatPage() {
 
                       <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-surface-container-low text-label-sm font-label-sm">
                         <span className="text-on-surface-variant flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-primary">calendar_today</span>
+                          <Icon name="calendar_today" className="text-[15px] text-primary" />
                           Academic Year
                         </span>
                         <span className="font-semibold text-on-surface">{getAcademicYearLabel(user?.current_year)}</span>
@@ -906,7 +905,7 @@ export default function ChatPage() {
 
                       <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-surface-container-low text-label-sm font-label-sm">
                         <span className="text-on-surface-variant flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-primary">mail</span>
+                          <Icon name="mail" className="text-[15px] text-primary" />
                           Email Address
                         </span>
                         <span className="font-medium text-on-surface truncate max-w-[150px]">{user?.email || 'student@university.edu'}</span>
@@ -924,7 +923,7 @@ export default function ChatPage() {
                         className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer text-label-sm font-label-sm"
                       >
                         <span className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[16px] text-tertiary-container">fact_check</span>
+                          <Icon name="fact_check" className="text-[16px] text-tertiary-container" />
                           View Attendance Record
                         </span>
                         <span className="text-tertiary-container font-semibold">{overallAttPct}%</span>
@@ -939,10 +938,10 @@ export default function ChatPage() {
                         className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer text-label-sm font-label-sm"
                       >
                         <span className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[16px] text-primary">calendar_month</span>
+                          <Icon name="calendar_month" className="text-[16px] text-primary" />
                           View Daily Schedule
                         </span>
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        <Icon name="arrow_forward" className="text-[14px]" />
                       </button>
                     </div>
                   </motion.div>
@@ -961,7 +960,7 @@ export default function ChatPage() {
               aria-label="Sign out"
               className="flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl bg-surface-container-low hover:bg-rose-50 text-on-surface-variant hover:text-error border border-surface-container hover:border-rose-200 transition-all cursor-pointer shadow-2xs group"
             >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-error transition-colors">logout</span>
+              <Icon name="logout" className="text-[18px] group-hover:text-error transition-colors" />
               <span className="hidden sm:inline font-label-md text-label-md font-medium group-hover:text-error">Sign Out</span>
             </button>
           </div>
@@ -973,7 +972,7 @@ export default function ChatPage() {
         >
           <div className="flex items-center gap-space-sm min-w-0">
             <div className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
-              <span className="material-symbols-outlined text-[20px]">forum</span>
+              <Icon name="forum" className="text-[20px]" />
             </div>
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-2">
@@ -1054,9 +1053,7 @@ export default function ChatPage() {
                       onClick={() => handleSendMessage(pill.text)}
                       className="p-space-sm rounded-xl bg-surface-container-lowest hover:bg-surface-container border border-surface-container flex items-center gap-space-sm text-left transition-all cursor-pointer shadow-2xs group"
                     >
-                      <span className={`material-symbols-outlined text-[20px] ${pill.color}`}>
-                        {pill.icon}
-                      </span>
+                      <Icon name={pill.icon} className={`text-[20px] ${pill.color}`} />
                       <span className="font-body-sm text-body-sm text-on-surface group-hover:text-primary font-medium">
                         {pill.text}
                       </span>
@@ -1074,7 +1071,7 @@ export default function ChatPage() {
               return (
                 <div key={msg.id || index} className="flex items-start gap-space-sm max-w-3xl mr-auto">
                   <div className="p-space-md rounded-2xl bg-rose-500/10 border border-rose-500/20 text-on-surface flex items-start gap-space-sm shadow-xs w-full">
-                    <span className="material-symbols-outlined text-error text-[22px] shrink-0 mt-0.5">wifi_off</span>
+                    <Icon name="wifi_off" className="text-error text-[22px] shrink-0 mt-0.5" />
                     <div className="flex-1 flex flex-col gap-1">
                       <div className="flex items-center justify-between">
                         <span className="font-label-md text-label-md font-semibold text-error">Connection Issue</span>
@@ -1093,7 +1090,7 @@ export default function ChatPage() {
                             className="px-3 py-1 rounded-lg bg-error hover:bg-rose-700 text-white font-label-sm text-label-sm font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
                             aria-label="Retry question"
                           >
-                            <span className="material-symbols-outlined text-[15px]">refresh</span>
+                            <Icon name="refresh" className="text-[15px]" />
                             <span>Retry</span>
                           </button>
                           <span className="font-body-sm text-body-sm text-on-surface-variant text-xs italic">
@@ -1123,22 +1120,22 @@ export default function ChatPage() {
                       <span>•</span>
                       {msg.syncStatus === 'sending' ? (
                         <span className="text-on-surface-variant flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+                          <Icon name="progress_activity" className="text-[13px] animate-spin" />
                           <span>Sending...</span>
                         </span>
                       ) : msg.syncStatus === 'saved' ? (
                         <span className="text-on-surface-variant flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">done</span>
+                          <Icon name="done" className="text-[14px]" />
                           <span>Saved</span>
                         </span>
                       ) : msg.syncStatus === 'failed' ? (
                         <span className="text-error flex items-center gap-1 font-semibold">
-                          <span className="material-symbols-outlined text-[14px]">error</span>
+                          <Icon name="error" className="text-[14px]" />
                           <span>Failed</span>
                         </span>
                       ) : (
                         <span className="text-tertiary-container flex items-center gap-0.5">
-                          <span className="material-symbols-outlined text-[14px]">done_all</span>
+                          <Icon name="done_all" className="text-[14px]" />
                           <span>Synced</span>
                         </span>
                       )}
@@ -1151,7 +1148,7 @@ export default function ChatPage() {
                           className="ml-1 px-2 py-0.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-error font-medium text-xs flex items-center gap-1 cursor-pointer transition-colors"
                           aria-label="Retry sending message"
                         >
-                          <span className="material-symbols-outlined text-[13px]">refresh</span>
+                          <Icon name="refresh" className="text-[13px]" />
                           <span>Retry</span>
                         </button>
                       )}
@@ -1229,7 +1226,7 @@ export default function ChatPage() {
             return (
               <div key={msg.id || index} className="flex items-start gap-space-md max-w-4xl">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-secondary text-on-primary flex items-center justify-center shadow-md shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">neurology</span>
+                  <Icon name="neurology" className="text-[20px]" />
                 </div>
 
                 <div className="flex-1 flex flex-col space-y-space-sm min-w-0">
@@ -1251,16 +1248,16 @@ export default function ChatPage() {
                       >
                         {copiedMessageId === (msg.id || index) ? (
                           <>
-                            <span className="material-symbols-outlined text-[15px] text-emerald-600">check</span>
+                            <Icon name="check" className="text-[15px] text-emerald-600" />
                             <span className="font-semibold text-[11px]">Copied</span>
                           </>
                         ) : copyErrorId === (msg.id || index) ? (
                           <>
-                            <span className="material-symbols-outlined text-[15px] text-error">error</span>
+                            <Icon name="error" className="text-[15px] text-error" />
                             <span className="font-semibold text-[11px]">Failed</span>
                           </>
                         ) : (
-                          <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                          <Icon name="content_copy" className="text-[16px]" />
                         )}
                       </button>
                     )}
@@ -1306,7 +1303,7 @@ export default function ChatPage() {
                     {shouldShowSourceFooter && (
                       <div className="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs border-t border-surface-container">
                         <div className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm">
-                          <span className="material-symbols-outlined text-[18px] text-primary">verified</span>
+                          <Icon name="verified" className="text-[18px] text-primary" />
                           <span>
                             Knowledge-Base Source: <strong className="text-on-surface">{resolvedSource}</strong>
                           </span>
@@ -1324,7 +1321,7 @@ export default function ChatPage() {
                             title="Directly open formatted university gazette / policy"
                           >
                             <span>Open Gazette</span>
-                            <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                            <Icon name="open_in_new" className="text-[14px]" />
                           </button>
                           <button
                             type="button"
@@ -1333,7 +1330,7 @@ export default function ChatPage() {
                             title="View institutional clause verification details"
                           >
                             <span>Clause Details</span>
-                            <span className="material-symbols-outlined text-[14px]">info</span>
+                            <Icon name="info" className="text-[14px]" />
                           </button>
                         </div>
                       </div>
@@ -1382,7 +1379,7 @@ export default function ChatPage() {
                 title={isListening ? "Stop voice recording" : "Voice Query"}
                 aria-label={isListening ? "Stop voice recording" : "Voice input"}
               >
-                <span className="material-symbols-outlined text-[20px]">mic</span>
+                <Icon name="mic" className="text-[20px]" />
               </button>
 
               <input
@@ -1408,7 +1405,7 @@ export default function ChatPage() {
                 aria-label="Send message"
                 className="w-10 h-10 rounded-full bg-gradient-to-r from-primary-container to-secondary text-on-primary flex items-center justify-center shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
               >
-                <span className="material-symbols-outlined text-[20px]">arrow_upward</span>
+                <Icon name="arrow_upward" className="text-[20px]" />
               </button>
             </div>
 
@@ -1439,7 +1436,7 @@ export default function ChatPage() {
             >
               <div className="flex items-start gap-space-sm">
                 <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-error flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[22px]">delete_forever</span>
+                  <Icon name="delete_forever" className="text-[22px]" />
                 </div>
                 <div className="flex flex-col">
                   <h3 id="confirm-delete-title" className="font-headline-sm text-headline-sm text-on-surface font-semibold">

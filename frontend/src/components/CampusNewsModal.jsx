@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { API_BASE } from '../services/api';
 import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
+import Icon from './Icon';
 
 const NOTICES_DATA = [
   {
@@ -134,7 +135,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
         <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
           <div className="flex items-center gap-space-sm">
             <div className="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center font-bold">
-              <span className="material-symbols-outlined text-[24px]">campaign</span>
+              <Icon name="campaign" className="text-[24px]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -155,16 +156,14 @@ export default function CampusNewsModal({ isOpen, onClose }) {
             aria-label="Close campus circulars modal"
             className="w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
           >
-            <span className="material-symbols-outlined">close</span>
+            <Icon name="close" className="w-5 h-5" />
           </button>
         </div>
 
         {/* Search & Tag Filter */}
         <div className="flex flex-col sm:flex-row gap-space-sm">
           <div className="relative flex-1">
-            <span className="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant text-[20px]">
-              search
-            </span>
+            <Icon name="search" className="absolute left-3 top-2.5 text-on-surface-variant text-[20px]" />
             <input
               type="text"
               placeholder="Search circulars, placement drives, exams..."
@@ -224,9 +223,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
                       className="text-on-surface-variant hover:text-primary font-label-sm text-label-sm font-semibold cursor-pointer flex items-center gap-1"
                     >
                       <span>{expandedNoticeId === n.id ? 'Hide Clauses' : 'Read Clauses'}</span>
-                      <span className="material-symbols-outlined text-[14px]">
-                        {expandedNoticeId === n.id ? 'expand_less' : 'expand_more'}
-                      </span>
+                      <Icon name={expandedNoticeId === n.id ? 'expand_less' : 'expand_more'} className="text-[14px]" />
                     </button>
                     <button
                       type="button"
@@ -237,7 +234,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
                       title="Open full printable institutional document"
                     >
                       <span>View Gazette</span>
-                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                      <Icon name="open_in_new" className="text-[14px]" />
                     </button>
                   </div>
                 </div>
@@ -270,7 +267,7 @@ export default function CampusNewsModal({ isOpen, onClose }) {
                         className="px-3 py-1.5 bg-primary text-on-primary text-xs font-semibold rounded-lg hover:bg-primary-container flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <span>Open Printable Gazette Window</span>
-                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                        <Icon name="open_in_new" className="text-[14px]" />
                       </button>
                     </div>
                   </div>

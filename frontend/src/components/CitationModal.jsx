@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { API_BASE } from '../services/api';
 import { useModalAccessibility, handleBackdropClick } from '../utils/useModalAccessibility';
+import Icon from './Icon';
 
 export default function CitationModal({ isOpen, onClose, citationData }) {
   const modalRef = useRef(null);
@@ -42,7 +43,7 @@ export default function CitationModal({ isOpen, onClose, citationData }) {
       >
         <div className="flex items-center justify-between pb-space-xs border-b border-surface-container">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[24px]">verified</span>
+            <Icon name="verified" className="text-primary text-[24px]" />
             <h3 id="citation-modal-title" className="font-headline-md text-headline-md text-on-surface font-semibold">
               Verified Institutional Clause
             </h3>
@@ -52,7 +53,7 @@ export default function CitationModal({ isOpen, onClose, citationData }) {
             aria-label="Close citation modal"
             className="w-8 h-8 rounded-lg hover:bg-surface-container flex items-center justify-center text-on-surface-variant transition-colors cursor-pointer"
           >
-            <span className="material-symbols-outlined">close</span>
+            <Icon name="close" className="w-5 h-5" />
           </button>
         </div>
 
@@ -84,7 +85,7 @@ export default function CitationModal({ isOpen, onClose, citationData }) {
             className="px-space-md py-2 rounded-xl bg-primary text-on-primary hover:bg-primary-container font-label-md text-label-md flex items-center gap-1 shadow-xs cursor-pointer transition-all"
           >
             <span>Open Document Viewer</span>
-            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+            <Icon name="open_in_new" className="text-[16px]" />
           </button>
         </div>
       </motion.div>

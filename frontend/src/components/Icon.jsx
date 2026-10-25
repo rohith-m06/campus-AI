@@ -38,6 +38,7 @@ import {
   Lock,
   RefreshCw,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   Search,
   Send,
@@ -60,7 +61,9 @@ import {
   Building,
   FileCheck,
   Shield,
-  Activity
+  Activity,
+  WifiOff,
+  Loader2
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -82,6 +85,7 @@ const ICON_MAP = {
   schedule: Clock,
   history_edu: BookOpen,
   user: User,
+  account_circle: User,
   how_to_reg: UserCheck,
   event_busy: CalendarX,
   id_card: IdCard,
@@ -101,6 +105,7 @@ const ICON_MAP = {
   verified: CheckCircle,
   verified_user: ShieldCheck,
   check_circle: CheckCircle2,
+  done: Check,
   done_all: CheckCheck,
   check: Check,
   warning: AlertTriangle,
@@ -109,16 +114,22 @@ const ICON_MAP = {
   lock: Lock,
   refresh: RefreshCw,
   sync: RefreshCw,
+  wifi_off: WifiOff,
+  progress_activity: Loader2,
 
   // Actions & Inputs
   content_copy: Copy,
   open_in_new: ExternalLink,
   delete: Trash2,
+  delete_forever: Trash2,
   mic: Mic,
   arrow_upward: ArrowUp,
   arrow_forward: ArrowRight,
   chevron_down: ChevronDown,
+  chevron_up: ChevronUp,
   chevron_right: ChevronRight,
+  expand_less: ChevronUp,
+  expand_more: ChevronDown,
   search: Search,
   send: Send,
   tune: SlidersHorizontal,
@@ -142,15 +153,29 @@ const ICON_MAP = {
   apartment: Building,
 };
 
-export default function Icon({ name, className = "w-5 h-5", size, ...props }) {
+export default function Icon({ name, className = "", size, ...props }) {
   if (!name) return null;
   const normalizedKey = name.toString().trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const Component = ICON_MAP[normalizedKey];
+  const Component = ICON_MAP[normalizedKey] || Sparkles;
 
-  if (!Component) {
-    // Graceful fallback icon
-    return <Sparkles className={className} size={size} {...props} />;
+  // Extract explicit pixel size from classes like text-[18px] or text-[20px]
+  let computedSize = size;
+  if (!computedSize && className) {
+    const match = className.match(/text-\[(\d+)px\]/);
+    if (match) {
+      computedSize = parseInt(match[1], 10);
+    }
   }
 
-  return <Component className={className} size={size} {...props} />;
+  // Ensure default dimensions if neither size nor w- is given
+  const hasWidth = /\bw-\d+|\bw-\[/.test(className);
+  const defaultDim = !hasWidth && !computedSize ? 'w-5 h-5' : '';
+
+  return (
+    <Component
+      className={`inline-block shrink-0 ${defaultDim} ${className}`}
+      size={computedSize}
+      {...props}
+    />
+  );
 }
