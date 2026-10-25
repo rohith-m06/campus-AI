@@ -251,7 +251,7 @@ export function normalizeTimetableData(input, userProfile = {}) {
     FRI: [],
   };
 
-  const rawDays = input?.days || input || {};
+  const rawDays = input?.weekly_matrix || input?.days || input || {};
 
   // Extract sessions by day
   DAYS.forEach((d) => {
