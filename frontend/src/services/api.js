@@ -17,7 +17,7 @@ function getAuthHeaders() {
   return headers;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 55000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

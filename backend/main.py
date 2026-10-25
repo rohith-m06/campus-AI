@@ -180,15 +180,17 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# 4. Configure CORS for frontend access
+# 4. Configure CORS for frontend access (supports local dev, Vercel deployments, Render previews)
 default_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:3000",
 ]
 custom_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=default_origins + custom_origins,
+    allow_origin_regex=r"^https?://.*$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
